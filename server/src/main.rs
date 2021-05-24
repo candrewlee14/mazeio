@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mazeio_shared::Player;
+use mazeio_shared::{Maze, Player};
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
@@ -112,19 +112,22 @@ async fn read_clients(
     }
 }
 
-#[instrument(skip(listener, read_streams, write_streams, players))]
+#[instrument(skip(listener, read_streams, write_streams, players, maze_arc))]
 async fn accept_connections(
     listener: TcpListener,
     read_streams: AtomicVec<AtomicReadStream>,
     write_streams: AtomicVec<AtomicWriteStream>,
     players: AtomicHashMap<SocketAddr, AtomicPlayer>,
+    maze_arc: Arc<Maze>,
 ) -> Result<()> {
     loop {
         event!(Level::TRACE, "Looking for new connections");
         match listener.accept().await {
             Ok((mut stream, addr)) => {
                 event!(Level::INFO, "Client connected at address {:?}", addr);
-                stream.write_all(b"welcome!\n").await?;
+                let mut ser_maze = serde_json::to_string(&*maze_arc)?;
+                ser_maze.push('\n');
+                stream.write_all(&ser_maze.as_bytes()).await?;
                 let (read_stream, write_stream) = io::split(stream);
                 {
                     event!(Level::TRACE, "Waiting for access to for write_stream write");
@@ -161,8 +164,8 @@ async fn main() -> Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let maze = mazeio_shared::Maze::new(15, 10);
-    println!("{}", maze.to_string());
+    let maze_arc = Arc::new(mazeio_shared::Maze::new(15, 10));
+    //println!("{}", maze_arc.to_string());
 
     event!(Level::INFO, "Server started!");
     let listener = TcpListener::bind("127.0.0.1:5000").await?;
@@ -178,7 +181,14 @@ async fn main() -> Result<()> {
             let read_streams_arc = read_streams_clone.clone();
             let write_streams_arc = write_streams_clone.clone();
             let players_arc = players_clone.clone();
-            accept_connections(listener, read_streams_arc, write_streams_arc, players_arc).await
+            accept_connections(
+                listener,
+                read_streams_arc,
+                write_streams_arc,
+                players_arc,
+                maze_arc,
+            )
+            .await
         })
     };
     let process_thread = {
