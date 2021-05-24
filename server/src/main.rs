@@ -1,29 +1,14 @@
-use anyhow::{anyhow, bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
+use mazeio_shared::Player;
+use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
-use std::{env, sync::Arc};
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt, Error, ReadHalf, WriteHalf};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, RwLock};
-use tokio::task::JoinHandle;
 use tokio::time::{interval, Duration};
 use tracing::{event, instrument, Level};
 use tracing_subscriber;
 
-#[allow(dead_code)]
-#[derive(Serialize, Deserialize, Debug)]
-struct Player {
-    name: String,
-    x: usize,
-    y: usize,
-}
-#[allow(dead_code)]
-impl Player {
-    pub fn new(name: String) -> Self {
-        Self { name, x: 0, y: 0 }
-    }
-}
-type AtomicStream = Arc<Mutex<TcpStream>>;
 type AtomicReadStream = Arc<Mutex<ReadHalf<TcpStream>>>;
 type AtomicWriteStream = Arc<Mutex<WriteHalf<TcpStream>>>;
 type AtomicPlayer = Arc<RwLock<Player>>;
@@ -43,13 +28,10 @@ async fn atomic_hashmap_to_string(
         }
         players_buf.push('[');
         for (_key, player_lock) in player_reader.iter() {
-            let mut player_str = String::new();
-            {
-                event!(Level::TRACE, "Read-locked player for serializing");
-                let readable_player = player_lock.read().await;
-                player_str = serde_json::to_string(&(*readable_player))?;
-                event!(Level::TRACE, "Read-unlocked player after serializing");
-            }
+            event!(Level::TRACE, "Read-locked player for serializing");
+            let readable_player = player_lock.read().await;
+            let player_str = (*readable_player).to_json()?;
+            event!(Level::TRACE, "Read-unlocked player after serializing");
             players_buf.push_str(&player_str);
             players_buf.push(',');
         }
@@ -178,6 +160,9 @@ async fn main() -> Result<()> {
         .with_env_filter(env_filter)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
+
+    let maze = mazeio_shared::Maze::new(15, 10);
+    println!("{}", maze.to_string());
 
     event!(Level::INFO, "Server started!");
     let listener = TcpListener::bind("127.0.0.1:5000").await?;

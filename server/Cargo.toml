@@ -10,8 +10,9 @@ edition = "2018"
 anyhow = "*"
 futures = "*"
 tokio = {version = "1", features=["rt-multi-thread", "macros", "net", "io-util", "sync", "time"]}
-serde = {version="*", features=["derive"]}
-serde_json = "*"
+serde = {version="1", features=["derive"]}
+serde_json = "1"
 tracing = { version = "0.1", features = ["log","max_level_trace", "release_max_level_warn"] }
 tracing-subscriber = "0.2"
+mazeio-shared = {path = "../shared"}
 

@@ -12,3 +12,4 @@ tokio = {version="1", features=["rt-multi-thread", "macros", "net", "io-util"]}
 anyhow = "*"
 serde = {version="*", features=["derive"]}
 serde_json = "*"
+mazeio-shared = {path = "../shared"}

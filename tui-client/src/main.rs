@@ -1,16 +1,10 @@
 use anyhow::{anyhow, bail, Context, Result};
+use mazeio_shared::Player;
 use serde::{Deserialize, Serialize};
 use std::{ascii::AsciiExt, error::Error, net::SocketAddr, sync::Arc};
 use tokio::io::BufReader;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Player {
-    name: String,
-    x: usize,
-    y: usize,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
