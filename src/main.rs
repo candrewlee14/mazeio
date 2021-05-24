@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
+use std::{env, sync::Arc};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, Error, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, RwLock};
@@ -171,10 +171,11 @@ async fn accept_connections(
 #[tokio::main]
 #[instrument]
 async fn main() -> Result<()> {
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
     let format = tracing_subscriber::fmt::format().without_time();
     let subscriber = tracing_subscriber::fmt()
         .event_format(format)
-        .with_max_level(Level::DEBUG)
+        .with_env_filter(env_filter)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
