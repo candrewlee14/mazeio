@@ -27,7 +27,7 @@ type AtomicStream = Arc<Mutex<TcpStream>>;
 type AtomicReadStream = Arc<Mutex<ReadHalf<TcpStream>>>;
 type AtomicWriteStream = Arc<Mutex<WriteHalf<TcpStream>>>;
 type AtomicPlayer = Arc<RwLock<Player>>;
-type AtomicVec<T> = Arc<Mutex<Vec<T>>>;
+type AtomicVec<T> = Arc<RwLock<Vec<T>>>;
 type AtomicHashMap<K, V> = Arc<RwLock<HashMap<K, V>>>;
 
 #[instrument(skip(players))]
@@ -71,9 +71,9 @@ async fn process(
     loop {
         interval.tick().await;
         let players_serialized = atomic_hashmap_to_string(players.clone()).await?;
-        let writeable_streams = write_streams.lock().await;
+        let readable_write_streams = write_streams.read().await;
         event!(Level::TRACE, "Writing to players, lock obtained");
-        for (i, stream) in writeable_streams.iter().enumerate() {
+        for (i, stream) in readable_write_streams.iter().enumerate() {
             event!(Level::TRACE, "Waiting for access to for stream write");
             let mut editable_stream = stream.lock().await;
             event!(Level::TRACE, "Obtained lock for stream write");
@@ -107,7 +107,7 @@ async fn read_clients(
     loop {
         interval.tick().await;
         event!(Level::TRACE, "Reading Streams");
-        let readable_streams = read_streams.lock().await;
+        let readable_streams = read_streams.read().await;
         for stream in readable_streams.iter() {
             let mut editable_stream = stream.lock().await;
             let mut recv = String::new();
@@ -145,13 +145,13 @@ async fn accept_connections(
                 stream.write_all(b"welcome!\n").await?;
                 let (read_stream, write_stream) = io::split(stream);
                 {
-                    event!(Level::DEBUG, "Waiting for access to for write_stream write");
-                    let mut mutable_write_streams = write_streams.lock().await;
+                    event!(Level::TRACE, "Waiting for access to for write_stream write");
+                    let mut mutable_write_streams = write_streams.write().await;
                     (*mutable_write_streams).push(Arc::new(Mutex::new(write_stream)));
-                    event!(Level::DEBUG, "Stream write complete");
-                    event!(Level::DEBUG, "Waiting for access to for read_stream write");
-                    let mut mutable_read_streams = read_streams.lock().await;
-                    event!(Level::DEBUG, "Obtained lock for read_stream write");
+                    event!(Level::TRACE, "Stream write complete");
+                    event!(Level::TRACE, "Waiting for access to for read_stream write");
+                    let mut mutable_read_streams = read_streams.write().await;
+                    event!(Level::TRACE, "Obtained lock for read_stream write");
                     (*mutable_read_streams).push(Arc::new(Mutex::new(read_stream)));
                     event!(Level::TRACE, "Waiting for access to for players write");
                     let mut mutable_map = players.write().await;
@@ -181,8 +181,8 @@ async fn main() -> Result<()> {
 
     event!(Level::INFO, "Server started!");
     let listener = TcpListener::bind("127.0.0.1:5000").await?;
-    let write_streams: AtomicVec<AtomicWriteStream> = Arc::new(Mutex::new(Vec::new()));
-    let read_streams: AtomicVec<AtomicReadStream> = Arc::new(Mutex::new(Vec::new()));
+    let write_streams: AtomicVec<AtomicWriteStream> = Arc::new(RwLock::new(Vec::new()));
+    let read_streams: AtomicVec<AtomicReadStream> = Arc::new(RwLock::new(Vec::new()));
     let players: AtomicHashMap<SocketAddr, AtomicPlayer> = Arc::new(RwLock::new(HashMap::new()));
     let connection_thread = {
         // Accept Connections
@@ -222,7 +222,7 @@ async fn main() -> Result<()> {
     };
     match tokio::try_join!(connection_thread, process_thread, read_thread) {
         Ok(_) => (),
-        Err(e) => println!("Error: {:?}", e),
+        Err(e) => event!(Level::ERROR, "Error: {:#?}", e),
     };
     Ok(())
 }
