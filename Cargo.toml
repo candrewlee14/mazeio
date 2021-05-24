@@ -5,3 +5,5 @@ members = [
     "tui-client",
     "shared"
 ]
+
+default-members = ["tui-client"]
