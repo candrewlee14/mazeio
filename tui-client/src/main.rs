@@ -16,26 +16,32 @@ use tokio::sync::{Mutex, RwLock};
 type AtomicPlayers = Arc<RwLock<Vec<Player>>>;
 type AtomicDirectionOption = Arc<RwLock<Option<Direction>>>;
 type AtomicMazeOption = Arc<RwLock<Option<Maze>>>;
+type BufferGrid = Vec<Vec<(Color, Color, char)>>;
 
-async fn queue_print_maze(stdout: &mut Stdout, maze: &Maze) -> Result<()> {
-    for y in 0..maze.cells.len() {
-        for (x, cell) in maze.cells[y].iter().enumerate() {
+async fn print_char_grid(stdout: &mut Stdout, grid: &BufferGrid) -> Result<()> {
+    for y in 0..grid.len() {
+        for (x, (back, fore, ch)) in grid[y].iter().enumerate() {
             stdout
                 .queue(MoveTo(x as u16, y as u16))?
-                .queue(SetBackgroundColor(Color::Black))?
-                .queue(SetForegroundColor(Color::White))?
-                .queue(Print(cell.to_char()))?;
+                .queue(SetBackgroundColor(*back))?
+                .queue(SetForegroundColor(*fore))?
+                .queue(Print(ch))?;
+        }
+    }
+    Ok(())
+}
+async fn queue_print_maze(grid: &mut BufferGrid, maze: &Maze) -> Result<()> {
+    for y in 0..maze.cells.len() {
+        for (x, cell) in maze.cells[y].iter().enumerate() {
+            grid[y][x] = (Color::Black, Color::White, cell.to_char());
         }
     }
     Ok(())
 }
 
-async fn queue_print_players(stdout: &mut Stdout, players: &[Player]) -> Result<()> {
+async fn queue_print_players(grid: &mut BufferGrid, players: &[Player]) -> Result<()> {
     for player in players.iter() {
-        stdout
-            .queue(MoveTo(player.x as u16, player.y as u16))?
-            .queue(SetForegroundColor(Color::Cyan))?
-            .queue(Print('\u{2588}'))?;
+        grid[player.y][player.x] = (Color::Cyan, Color::Cyan, '\u{2588}');
     }
     Ok(())
 }
@@ -90,16 +96,19 @@ async fn gui(
     maze: AtomicMazeOption,
     cur_dir_rwlock: AtomicDirectionOption,
 ) -> Result<()> {
+    let (size_x, size_y) = crossterm::terminal::size()?;
+    let mut buffer_grid: BufferGrid =
+        vec![vec![(Color::Black, Color::White, ' '); size_x as usize]; size_y as usize];
     loop {
         if crossterm::event::poll(std::time::Duration::from_millis(25))? {
             match crossterm::event::read()? {
                 Event::Key(keyevent) => match keyevent.code {
                     KeyCode::Esc => {
                         stdout
-                            .queue(MoveTo(30, 0))?
-                            .queue(SetForegroundColor(Color::Green))?
-                            .queue(SetBackgroundColor(Color::Black))?
-                            .queue(Print("Exiting program"))?;
+                            .execute(MoveTo(30, 0))?
+                            .execute(SetForegroundColor(Color::Green))?
+                            .execute(SetBackgroundColor(Color::Black))?
+                            .execute(Print("Exiting program"))?;
                         break;
                     }
                     KeyCode::Down => {
@@ -126,20 +135,15 @@ async fn gui(
             {
                 let mut cur_dir = cur_dir_rwlock.write().await;
                 *cur_dir = None;
-                //println!("{:?}", *cur_dir);
             }
             let maze_readable = maze.read().await;
             if let Some(maze_info) = &*maze_readable {
-                queue_print_maze(&mut stdout, &maze_info).await?;
+                queue_print_maze(&mut buffer_grid, &maze_info).await?;
                 {
                     let players_readable = players.read().await;
-                    queue_print_players(&mut stdout, &*players_readable).await?;
+                    queue_print_players(&mut buffer_grid, &*players_readable).await?;
                 }
-                stdout
-                    .queue(MoveTo((maze_info.width + 2) as u16, 0))?
-                    .queue(SetForegroundColor(Color::Green))?
-                    .queue(SetBackgroundColor(Color::Black))?
-                    .queue(Print("Exit with escape key"))?;
+                print_char_grid(&mut stdout, &buffer_grid).await?;
             }
         }
         stdout.flush()?;

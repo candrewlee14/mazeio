@@ -54,7 +54,7 @@ async fn process(
     write_streams: AtomicVec<AtomicWriteStream>,
     players: AtomicHashMap<SocketAddr, AtomicPlayer>,
 ) -> Result<()> {
-    let mut interval = interval(Duration::from_millis(1000));
+    let mut interval = interval(Duration::from_millis(50));
     loop {
         interval.tick().await;
         let players_serialized = atomic_hashmap_to_string(players.clone()).await?;
@@ -92,7 +92,7 @@ async fn read_clients(
     width: usize,
     height: usize,
 ) -> Result<()> {
-    let mut interval = interval(Duration::from_millis(250));
+    let mut interval = interval(Duration::from_millis(50));
     loop {
         interval.tick().await;
         event!(Level::TRACE, "Reading Streams");
@@ -101,7 +101,7 @@ async fn read_clients(
             let mut editable_stream = stream.lock().await;
             let mut recv = String::new();
             match tokio::time::timeout(
-                Duration::from_millis(250),
+                Duration::from_millis(25),
                 (*editable_stream).read_line(&mut recv),
             )
             .await
