@@ -2,14 +2,16 @@ use anyhow::Result;
 use mazeio_shared::{Maze, Player};
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
+use tokio::io::{
+    self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf,
+};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{interval, Duration};
 use tracing::{event, instrument, Level};
 use tracing_subscriber;
 
-type AtomicReadStream = Arc<Mutex<ReadHalf<TcpStream>>>;
+type AtomicReadStream = Arc<Mutex<BufReader<ReadHalf<TcpStream>>>>;
 type AtomicWriteStream = Arc<Mutex<WriteHalf<TcpStream>>>;
 type AtomicPlayer = Arc<RwLock<Player>>;
 type AtomicVec<T> = Arc<RwLock<Vec<T>>>;
@@ -94,12 +96,15 @@ async fn read_clients(
             let mut editable_stream = stream.lock().await;
             let mut recv = String::new();
             match tokio::time::timeout(
-                Duration::from_millis(25),
-                (*editable_stream).read_to_string(&mut recv),
+                Duration::from_millis(250),
+                (*editable_stream).read_line(&mut recv),
             )
             .await
             {
-                Ok(Ok(_)) => {}
+                Ok(Ok(0)) => {}
+                Ok(Ok(_)) => {
+                    event!(Level::INFO, "Client sent data: {}", recv)
+                }
                 Ok(Err(_)) => {
                     event!(Level::WARN, "Client read error")
                 }
@@ -137,7 +142,7 @@ async fn accept_connections(
                     event!(Level::TRACE, "Waiting for access to for read_stream write");
                     let mut mutable_read_streams = read_streams.write().await;
                     event!(Level::TRACE, "Obtained lock for read_stream write");
-                    (*mutable_read_streams).push(Arc::new(Mutex::new(read_stream)));
+                    (*mutable_read_streams).push(Arc::new(Mutex::new(BufReader::new(read_stream))));
                     event!(Level::TRACE, "Waiting for access to for players write");
                     let mut mutable_map = players.write().await;
                     (*mutable_map).insert(

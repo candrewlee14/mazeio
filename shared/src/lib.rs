@@ -26,7 +26,7 @@ impl Player {
 }
 
 #[repr(u8)]
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub enum Direction {
     Left,
     Right,

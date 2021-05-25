@@ -3,17 +3,19 @@ use crossterm::cursor::MoveTo;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use crossterm::style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor};
 use crossterm::{cursor, execute, queue, terminal, ExecutableCommand, QueueableCommand};
-use mazeio_shared::{Maze, Player};
+use mazeio_shared::{Direction, Maze, Player};
 use serde::{Deserialize, Serialize};
 use std::io::{stdout, Stdout, Write};
 use std::{ascii::AsciiExt, error::Error, net::SocketAddr, sync::Arc};
-use tokio::io::BufReader;
-use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{
+    self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf,
+};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, RwLock};
 
 type AtomicPlayers = Arc<RwLock<Vec<Player>>>;
-type AtomicMaze = Arc<RwLock<Maze>>;
+type AtomicDirectionOption = Arc<RwLock<Option<Direction>>>;
+type AtomicMazeOption = Arc<RwLock<Option<Maze>>>;
 
 async fn print_maze(stdout: &mut Stdout, maze: &Maze) -> Result<()> {
     for y in 0..maze.cells.len() {
@@ -29,10 +31,39 @@ async fn print_maze(stdout: &mut Stdout, maze: &Maze) -> Result<()> {
     Ok(())
 }
 
+async fn print_players(stdout: &mut Stdout, players: &[Player]) -> Result<()> {
+    for player in players.iter() {
+        stdout
+            .queue(MoveTo(player.x as u16, player.y as u16))?
+            .queue(SetBackgroundColor(Color::Black))?
+            .queue(SetForegroundColor(Color::Cyan))?
+            .queue(Print('\u{2388}'))?;
+    }
+    stdout.flush()?;
+    Ok(())
+}
+async fn send_input(
+    mut write_stream: WriteHalf<TcpStream>,
+    cur_dir_rwlock: AtomicDirectionOption,
+) -> Result<()> {
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(25));
+    loop {
+        interval.tick().await;
+        let cur_dir = cur_dir_rwlock.read().await;
+        if let Some(dir) = &*cur_dir {
+            let mut dir_ser = serde_json::to_string(dir)?;
+            println!("{}", dir_ser);
+            dir_ser.push('\n');
+            write_stream.write_all(dir_ser.as_bytes()).await?;
+            println!("Sent data");
+        }
+    }
+}
+
 async fn process(
-    mut stream_as_buf: BufReader<TcpStream>,
+    mut stream_as_buf: BufReader<ReadHalf<TcpStream>>,
     players: AtomicPlayers,
-    maze: AtomicMaze,
+    maze: AtomicMazeOption,
 ) -> Result<()> {
     let mut input = String::new();
     loop {
@@ -44,7 +75,7 @@ async fn process(
                     *players_writeable = deser_players;
                 } else if let Ok(deser_maze) = serde_json::from_str(&input.trim()) {
                     let mut maze_writeable = maze.write().await;
-                    *maze_writeable = deser_maze;
+                    *maze_writeable = Some(deser_maze);
                 //println!("{}", maze_writeable.to_string());
                 } else {
                     //println!("{}", input.trim());
@@ -56,28 +87,61 @@ async fn process(
         }
     }
 }
-async fn gui(mut stdout: Stdout, players: AtomicPlayers, maze: AtomicMaze) -> Result<()> {
+async fn gui(
+    mut stdout: Stdout,
+    players: AtomicPlayers,
+    maze: AtomicMazeOption,
+    cur_dir_rwlock: AtomicDirectionOption,
+) -> Result<()> {
     loop {
         if crossterm::event::poll(std::time::Duration::from_millis(25))? {
             match crossterm::event::read()? {
-                Event::Key(keyevent) if keyevent.code == KeyCode::Esc => {
-                    stdout
-                        .execute(MoveTo(30, 0))?
-                        .execute(SetForegroundColor(Color::Green))?
-                        .execute(SetBackgroundColor(Color::Black))?
-                        .execute(Print("Exiting program"))?;
-                    break;
-                }
+                Event::Key(keyevent) => match keyevent.code {
+                    KeyCode::Esc => {
+                        stdout
+                            .execute(MoveTo(30, 0))?
+                            .execute(SetForegroundColor(Color::Green))?
+                            .execute(SetBackgroundColor(Color::Black))?
+                            .execute(Print("Exiting program"))?;
+                        break;
+                    }
+                    KeyCode::Down => {
+                        let mut cur_dir = cur_dir_rwlock.write().await;
+                        *cur_dir = Some(Direction::Down);
+                    }
+                    KeyCode::Up => {
+                        let mut cur_dir = cur_dir_rwlock.write().await;
+                        *cur_dir = Some(Direction::Up);
+                    }
+                    KeyCode::Left => {
+                        let mut cur_dir = cur_dir_rwlock.write().await;
+                        *cur_dir = Some(Direction::Left);
+                    }
+                    KeyCode::Right => {
+                        let mut cur_dir = cur_dir_rwlock.write().await;
+                        *cur_dir = Some(Direction::Right);
+                    }
+                    _ => (),
+                },
                 _ => (),
             }
         } else {
+            {
+                let mut cur_dir = cur_dir_rwlock.write().await;
+                *cur_dir = None;
+                println!("{:?}", *cur_dir);
+            }
             let maze_readable = maze.read().await;
-            print_maze(&mut stdout, &*maze_readable).await?;
-            stdout
-                .execute(MoveTo((maze_readable.width + 2) as u16, 0))?
-                .execute(SetForegroundColor(Color::Green))?
-                .execute(SetBackgroundColor(Color::Black))?
-                .execute(Print("Exit with escape key"))?;
+            let players_readable = players.read().await;
+            if let Some(maze_info) = &*maze_readable {
+                print_maze(&mut stdout, &maze_info).await?;
+                print_players(&mut stdout, &*players_readable).await?;
+                stdout
+                    .execute(MoveTo((maze_info.width + 2) as u16, 0))?
+                    .execute(SetForegroundColor(Color::Green))?
+                    .execute(SetBackgroundColor(Color::Black))?
+                    .execute(Print("Exit with escape key"))?;
+            }
         }
     }
     terminal::disable_raw_mode()?;
@@ -93,12 +157,13 @@ async fn main() -> Result<()> {
         .execute(cursor::Hide)?;
     terminal::enable_raw_mode()?;
     terminal::Clear(terminal::ClearType::All);
+    let current_dir: AtomicDirectionOption = Arc::new(RwLock::new(None));
     let stream = TcpStream::connect("127.0.0.1:5000").await?;
-    // This is still writable to as well
-    let stream_as_buf = BufReader::new(stream);
+    let (read_stream, write_stream) = tokio::io::split(stream);
+    let stream_as_buf = BufReader::new(read_stream);
     println!("Connected to server");
     let players: AtomicPlayers = Arc::new(RwLock::new(Vec::new()));
-    let maze = Arc::new(RwLock::new(Maze::new(1, 1)));
+    let maze = Arc::new(RwLock::new(None));
     let server_handle = {
         let players_arc = players.clone();
         let maze_arc = maze.clone();
@@ -107,9 +172,14 @@ async fn main() -> Result<()> {
     let gui_handle = {
         let players_arc = players.clone();
         let maze_arc = maze.clone();
-        tokio::spawn(async move { gui(stdout, players_arc, maze_arc).await })
+        let current_dir_clone = current_dir.clone();
+        tokio::spawn(async move { gui(stdout, players_arc, maze_arc, current_dir_clone).await })
     };
-    match tokio::try_join!(server_handle, gui_handle) {
+    let send_handle = {
+        let current_dir_clone = current_dir.clone();
+        tokio::spawn(async move { send_input(write_stream, current_dir_clone).await })
+    };
+    match tokio::try_join!(server_handle, gui_handle, send_handle) {
         Ok(_) => (),
         Err(e) => eprint!("Error: {:#?}", e),
     };
