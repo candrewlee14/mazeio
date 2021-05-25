@@ -17,7 +17,7 @@ type AtomicPlayers = Arc<RwLock<Vec<Player>>>;
 type AtomicDirectionOption = Arc<RwLock<Option<Direction>>>;
 type AtomicMazeOption = Arc<RwLock<Option<Maze>>>;
 
-async fn print_maze(stdout: &mut Stdout, maze: &Maze) -> Result<()> {
+async fn queue_print_maze(stdout: &mut Stdout, maze: &Maze) -> Result<()> {
     for y in 0..maze.cells.len() {
         for (x, cell) in maze.cells[y].iter().enumerate() {
             stdout
@@ -27,19 +27,16 @@ async fn print_maze(stdout: &mut Stdout, maze: &Maze) -> Result<()> {
                 .queue(Print(cell.to_char()))?;
         }
     }
-    stdout.flush()?;
     Ok(())
 }
 
-async fn print_players(stdout: &mut Stdout, players: &[Player]) -> Result<()> {
+async fn queue_print_players(stdout: &mut Stdout, players: &[Player]) -> Result<()> {
     for player in players.iter() {
         stdout
             .queue(MoveTo(player.x as u16, player.y as u16))?
-            .queue(SetBackgroundColor(Color::Black))?
             .queue(SetForegroundColor(Color::Cyan))?
-            .queue(Print('\u{2388}'))?;
+            .queue(Print('\u{2588}'))?;
     }
-    stdout.flush()?;
     Ok(())
 }
 async fn send_input(
@@ -52,10 +49,10 @@ async fn send_input(
         let cur_dir = cur_dir_rwlock.read().await;
         if let Some(dir) = &*cur_dir {
             let mut dir_ser = serde_json::to_string(dir)?;
-            println!("{}", dir_ser);
+            //println!("{}", dir_ser);
             dir_ser.push('\n');
             write_stream.write_all(dir_ser.as_bytes()).await?;
-            println!("Sent data");
+            //println!("Sent data");
         }
     }
 }
@@ -99,10 +96,10 @@ async fn gui(
                 Event::Key(keyevent) => match keyevent.code {
                     KeyCode::Esc => {
                         stdout
-                            .execute(MoveTo(30, 0))?
-                            .execute(SetForegroundColor(Color::Green))?
-                            .execute(SetBackgroundColor(Color::Black))?
-                            .execute(Print("Exiting program"))?;
+                            .queue(MoveTo(30, 0))?
+                            .queue(SetForegroundColor(Color::Green))?
+                            .queue(SetBackgroundColor(Color::Black))?
+                            .queue(Print("Exiting program"))?;
                         break;
                     }
                     KeyCode::Down => {
@@ -129,20 +126,23 @@ async fn gui(
             {
                 let mut cur_dir = cur_dir_rwlock.write().await;
                 *cur_dir = None;
-                println!("{:?}", *cur_dir);
+                //println!("{:?}", *cur_dir);
             }
             let maze_readable = maze.read().await;
-            let players_readable = players.read().await;
             if let Some(maze_info) = &*maze_readable {
-                print_maze(&mut stdout, &maze_info).await?;
-                print_players(&mut stdout, &*players_readable).await?;
+                queue_print_maze(&mut stdout, &maze_info).await?;
+                {
+                    let players_readable = players.read().await;
+                    queue_print_players(&mut stdout, &*players_readable).await?;
+                }
                 stdout
-                    .execute(MoveTo((maze_info.width + 2) as u16, 0))?
-                    .execute(SetForegroundColor(Color::Green))?
-                    .execute(SetBackgroundColor(Color::Black))?
-                    .execute(Print("Exit with escape key"))?;
+                    .queue(MoveTo((maze_info.width + 2) as u16, 0))?
+                    .queue(SetForegroundColor(Color::Green))?
+                    .queue(SetBackgroundColor(Color::Black))?
+                    .queue(Print("Exit with escape key"))?;
             }
         }
+        stdout.flush()?;
     }
     terminal::disable_raw_mode()?;
     stdout.execute(terminal::LeaveAlternateScreen)?;
@@ -161,7 +161,7 @@ async fn main() -> Result<()> {
     let stream = TcpStream::connect("127.0.0.1:5000").await?;
     let (read_stream, write_stream) = tokio::io::split(stream);
     let stream_as_buf = BufReader::new(read_stream);
-    println!("Connected to server");
+    //println!("Connected to server");
     let players: AtomicPlayers = Arc::new(RwLock::new(Vec::new()));
     let maze = Arc::new(RwLock::new(None));
     let server_handle = {

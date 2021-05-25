@@ -1,18 +1,21 @@
 use anyhow::Result;
-use mazeio_shared::{Maze, Player};
+use mazeio_shared::{move_in_dir, Direction, Maze, Player};
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::io::{
     self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf,
 };
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{
+    tcp::{OwnedReadHalf, OwnedWriteHalf},
+    TcpListener, TcpStream,
+};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{interval, Duration};
 use tracing::{event, instrument, Level};
 use tracing_subscriber;
 
-type AtomicReadStream = Arc<Mutex<BufReader<ReadHalf<TcpStream>>>>;
-type AtomicWriteStream = Arc<Mutex<WriteHalf<TcpStream>>>;
+type AtomicReadStream = Arc<Mutex<BufReader<OwnedReadHalf>>>;
+type AtomicWriteStream = Arc<Mutex<OwnedWriteHalf>>;
 type AtomicPlayer = Arc<RwLock<Player>>;
 type AtomicVec<T> = Arc<RwLock<Vec<T>>>;
 type AtomicHashMap<K, V> = Arc<RwLock<HashMap<K, V>>>;
@@ -86,6 +89,8 @@ async fn read_clients(
     read_streams: AtomicVec<AtomicReadStream>,
     write_streams: AtomicVec<AtomicWriteStream>,
     players: AtomicHashMap<SocketAddr, AtomicPlayer>,
+    width: usize,
+    height: usize,
 ) -> Result<()> {
     let mut interval = interval(Duration::from_millis(250));
     loop {
@@ -103,7 +108,18 @@ async fn read_clients(
             {
                 Ok(Ok(0)) => {}
                 Ok(Ok(_)) => {
-                    event!(Level::INFO, "Client sent data: {}", recv)
+                    event!(Level::DEBUG, "Client sent data: {}", recv);
+                    let players_readable = players.read().await;
+                    let player_arc: &AtomicPlayer = players_readable
+                        .get(&(*editable_stream).get_ref().as_ref().peer_addr()?)
+                        .unwrap();
+                    let mut player_writeable = player_arc.write().await;
+                    let dir: Direction = serde_json::from_str(&recv)?;
+                    let mut x = (*player_writeable).x;
+                    let mut y = (*player_writeable).y;
+                    move_in_dir(&mut x, &mut y, 1, 1, width - 2, height - 2, &dir, 1);
+                    (*player_writeable).x = x;
+                    (*player_writeable).y = y;
                 }
                 Ok(Err(_)) => {
                     event!(Level::WARN, "Client read error")
@@ -133,7 +149,7 @@ async fn accept_connections(
                 let mut ser_maze = serde_json::to_string(&*maze_arc)?;
                 ser_maze.push('\n');
                 stream.write_all(&ser_maze.as_bytes()).await?;
-                let (read_stream, write_stream) = io::split(stream);
+                let (read_stream, write_stream) = stream.into_split();
                 {
                     event!(Level::TRACE, "Waiting for access to for write_stream write");
                     let mut mutable_write_streams = write_streams.write().await;
@@ -169,7 +185,9 @@ async fn main() -> Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let maze_arc = Arc::new(mazeio_shared::Maze::new(15, 10));
+    let maze_width = 15;
+    let maze_height = 10;
+    let maze_arc = Arc::new(mazeio_shared::Maze::new(maze_width, maze_height));
 
     event!(Level::INFO, "Server started!");
     let listener = TcpListener::bind("127.0.0.1:5000").await?;
@@ -216,7 +234,14 @@ async fn main() -> Result<()> {
             let read_streams_arc = read_streams_clone.clone();
             let write_streams_arc = write_streams_clone.clone();
             let players_arc = players_clone.clone();
-            read_clients(read_streams_arc, write_streams_arc, players_arc).await
+            read_clients(
+                read_streams_arc,
+                write_streams_arc,
+                players_arc,
+                maze_width,
+                maze_height,
+            )
+            .await
         })
     };
     match tokio::try_join!(connection_thread, process_thread, read_thread) {

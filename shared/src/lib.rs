@@ -18,7 +18,7 @@ pub struct Player {
 #[allow(dead_code)]
 impl Player {
     pub fn new(name: String) -> Self {
-        Self { name, x: 0, y: 0 }
+        Self { name, x: 1, y: 1 }
     }
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self).map_err(anyhow::Error::msg)
