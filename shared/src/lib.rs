@@ -11,9 +11,9 @@ use std::cmp::{max, min};
 #[allow(dead_code)]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Player {
-    name: String,
-    x: usize,
-    y: usize,
+    pub name: String,
+    pub x: usize,
+    pub y: usize,
 }
 #[allow(dead_code)]
 impl Player {
@@ -25,7 +25,8 @@ impl Player {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[repr(u8)]
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
 pub enum Direction {
     Left,
     Right,
@@ -53,10 +54,19 @@ impl Distribution<Direction> for Standard {
     }
 }
 
+#[repr(u8)]
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum CellType {
     Open,
     Wall,
+}
+impl CellType {
+    pub fn to_char(&self) -> char {
+        match self {
+            CellType::Wall => '\u{2588}',
+            CellType::Open => ' ',
+        }
+    }
 }
 
 #[inline]
@@ -88,9 +98,9 @@ pub fn move_in_dir(
 
 #[derive(Serialize, Deserialize)]
 pub struct Maze {
-    cells: Vec<Vec<CellType>>,
-    width: usize,
-    height: usize,
+    pub cells: Vec<Vec<CellType>>,
+    pub width: usize,
+    pub height: usize,
 }
 impl Maze {
     pub fn new(open_cells_x: usize, open_cells_y: usize) -> Self {
@@ -106,7 +116,6 @@ impl Maze {
         while total_open_cells > 0 {
             let dir: Direction = rand::random();
             move_in_dir(&mut pos_x, &mut pos_y, 1, 1, width - 2, height - 2, &dir, 2);
-            println!("x: {}, y: {}", pos_x, pos_y);
             if cells[pos_y][pos_x] == CellType::Wall {
                 cells[pos_y][pos_x] = CellType::Open;
                 let mut between_x = pos_x;
@@ -131,6 +140,9 @@ impl Maze {
             height,
         }
     }
+    pub fn to_json(&self) -> Result<String> {
+        serde_json::to_string(self).map_err(anyhow::Error::msg)
+    }
 }
 impl std::string::ToString for Maze {
     fn to_string(&self) -> String {
@@ -138,10 +150,7 @@ impl std::string::ToString for Maze {
             .iter()
             .map(|row| {
                 row.iter()
-                    .map(|cell| match cell {
-                        CellType::Wall => '\u{2588}',
-                        CellType::Open => ' ',
-                    })
+                    .map(CellType::to_char)
                     .chain(std::iter::once('\n'))
                     .collect::<Vec<char>>()
             })

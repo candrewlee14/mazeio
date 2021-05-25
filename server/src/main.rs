@@ -165,7 +165,6 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     let maze_arc = Arc::new(mazeio_shared::Maze::new(15, 10));
-    //println!("{}", maze_arc.to_string());
 
     event!(Level::INFO, "Server started!");
     let listener = TcpListener::bind("127.0.0.1:5000").await?;
