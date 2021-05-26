@@ -1,5 +1,5 @@
 use anyhow::Result;
-use mazeio_shared::{move_in_dir, Direction, Maze, Player};
+use mazeio_shared::{move_in_dir, CellType, Direction, Maze, Player};
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::io::{
@@ -84,13 +84,12 @@ async fn process(
     }
 }
 
-#[instrument(skip(read_streams, write_streams, players))]
+#[instrument(skip(read_streams, write_streams, players, maze))]
 async fn read_clients(
     read_streams: AtomicVec<AtomicReadStream>,
     write_streams: AtomicVec<AtomicWriteStream>,
     players: AtomicHashMap<SocketAddr, AtomicPlayer>,
-    width: usize,
-    height: usize,
+    maze: Arc<Maze>,
 ) -> Result<()> {
     let mut interval = interval(Duration::from_millis(50));
     loop {
@@ -117,9 +116,11 @@ async fn read_clients(
                     let dir: Direction = serde_json::from_str(&recv)?;
                     let mut x = (*player_writeable).x;
                     let mut y = (*player_writeable).y;
-                    move_in_dir(&mut x, &mut y, 1, 1, width - 2, height - 2, &dir, 1);
-                    (*player_writeable).x = x;
-                    (*player_writeable).y = y;
+                    move_in_dir(&mut x, &mut y, 1, 1, maze.width, maze.height, &dir, 1);
+                    if maze.cells[y][x] == CellType::Open {
+                        (*player_writeable).x = x;
+                        (*player_writeable).y = y;
+                    }
                 }
                 Ok(Err(_)) => {
                     event!(Level::WARN, "Client read error")
@@ -187,7 +188,7 @@ async fn main() -> Result<()> {
 
     let maze_width = 15;
     let maze_height = 10;
-    let maze_arc = Arc::new(mazeio_shared::Maze::new(maze_width, maze_height));
+    let maze = Arc::new(mazeio_shared::Maze::new(maze_width, maze_height));
 
     event!(Level::INFO, "Server started!");
     let listener = TcpListener::bind("127.0.0.1:5000").await?;
@@ -199,10 +200,12 @@ async fn main() -> Result<()> {
         let read_streams_clone = read_streams.clone();
         let write_streams_clone = write_streams.clone();
         let players_clone = players.clone();
+        let maze_clone = maze.clone();
         tokio::spawn(async move {
             let read_streams_arc = read_streams_clone.clone();
             let write_streams_arc = write_streams_clone.clone();
             let players_arc = players_clone.clone();
+            let maze_arc = maze_clone.clone();
             accept_connections(
                 listener,
                 read_streams_arc,
@@ -230,18 +233,13 @@ async fn main() -> Result<()> {
         let read_streams_clone = read_streams.clone();
         let write_streams_clone = write_streams.clone();
         let players_clone = players.clone();
+        let maze_clone = maze.clone();
         tokio::spawn(async move {
             let read_streams_arc = read_streams_clone.clone();
             let write_streams_arc = write_streams_clone.clone();
             let players_arc = players_clone.clone();
-            read_clients(
-                read_streams_arc,
-                write_streams_arc,
-                players_arc,
-                maze_width,
-                maze_height,
-            )
-            .await
+            let maze_arc = maze_clone.clone();
+            read_clients(read_streams_arc, write_streams_arc, players_arc, maze_arc).await
         })
     };
     match tokio::try_join!(connection_thread, process_thread, read_thread) {
