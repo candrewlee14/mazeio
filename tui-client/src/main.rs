@@ -10,18 +10,22 @@ use std::{ascii::AsciiExt, error::Error, net::SocketAddr, sync::Arc};
 use tokio::io::{
     self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf,
 };
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, RwLock};
 
+type AtomicBool = Arc<RwLock<bool>>;
 type AtomicPlayers = Arc<RwLock<Vec<Player>>>;
+type AtomicStdout = Arc<Mutex<Stdout>>;
 type AtomicDirectionOption = Arc<RwLock<Option<Direction>>>;
 type AtomicMazeOption = Arc<RwLock<Option<Maze>>>;
 type BufferGrid = Vec<Vec<(Color, Color, char)>>;
 
-async fn print_char_grid(stdout: &mut Stdout, grid: &BufferGrid) -> Result<()> {
+async fn print_char_grid(stdout: AtomicStdout, grid: &BufferGrid) -> Result<()> {
+    let mut stdout_accessor = stdout.lock().await;
     for y in 0..grid.len() {
         for (x, (back, fore, ch)) in grid[y].iter().enumerate() {
-            stdout
+            stdout_accessor
                 .queue(MoveTo(x as u16, y as u16))?
                 .queue(SetBackgroundColor(*back))?
                 .queue(SetForegroundColor(*fore))?
@@ -46,52 +50,84 @@ async fn queue_print_players(grid: &mut BufferGrid, players: &[Player]) -> Resul
     Ok(())
 }
 async fn send_input(
-    mut write_stream: WriteHalf<TcpStream>,
+    end_game: AtomicBool,
+    mut write_stream: OwnedWriteHalf,
     cur_dir_rwlock: AtomicDirectionOption,
 ) -> Result<()> {
     let mut interval = tokio::time::interval(std::time::Duration::from_millis(25));
     loop {
         interval.tick().await;
+        {
+            let end = end_game.read().await;
+            if *end {
+                return Ok(());
+            }
+        }
         let cur_dir = cur_dir_rwlock.read().await;
         if let Some(dir) = &*cur_dir {
             let mut dir_ser = serde_json::to_string(dir)?;
-            //println!("{}", dir_ser);
             dir_ser.push('\n');
-            write_stream.write_all(dir_ser.as_bytes()).await?;
-            //println!("Sent data");
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(1000),
+                write_stream.write_all(dir_ser.as_bytes()),
+            )
+            .await
+            {
+                Ok(Ok(_)) => (),
+                Ok(Err(_)) | Err(_) => {
+                    println!("Yeet");
+                    let mut end = end_game.write().await;
+                    *end = true;
+                    return Err("Send Failed").map_err(anyhow::Error::msg);
+                }
+            };
         }
     }
 }
 
 async fn process(
-    mut stream_as_buf: BufReader<ReadHalf<TcpStream>>,
+    end_game: AtomicBool,
+    mut stream_as_buf: BufReader<OwnedReadHalf>,
     players: AtomicPlayers,
     maze: AtomicMazeOption,
 ) -> Result<()> {
     let mut input = String::new();
     loop {
-        match stream_as_buf.read_line(&mut input).await {
-            Ok(0) => {}
-            Ok(_bytes) => {
+        {
+            let end = end_game.read().await;
+            if *end {
+                return Ok(());
+            }
+        }
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(1000),
+            stream_as_buf.read_line(&mut input),
+        )
+        .await
+        {
+            Ok(Ok(0)) => {}
+            Ok(Ok(_bytes)) => {
                 if let Ok(deser_players) = serde_json::from_str(&input.trim()) {
                     let mut players_writeable = players.write().await;
                     *players_writeable = deser_players;
                 } else if let Ok(deser_maze) = serde_json::from_str(&input.trim()) {
                     let mut maze_writeable = maze.write().await;
                     *maze_writeable = Some(deser_maze);
-                //println!("{}", maze_writeable.to_string());
-                } else {
-                    //println!("{}", input.trim());
                 }
-                //println!("{:?}", players);
                 input.clear();
             }
-            _ => eprintln!("Read Error"),
-        }
+            Ok(Err(_)) | Err(_) => {
+                println!("Read Error");
+                let mut end = end_game.write().await;
+                *end = true;
+                return Err("Disconnected from server").map_err(anyhow::Error::msg);
+            }
+        };
     }
 }
 async fn gui(
-    mut stdout: Stdout,
+    end_game: AtomicBool,
+    stdout: AtomicStdout,
     players: AtomicPlayers,
     maze: AtomicMazeOption,
     cur_dir_rwlock: AtomicDirectionOption,
@@ -100,11 +136,18 @@ async fn gui(
     let mut buffer_grid: BufferGrid =
         vec![vec![(Color::Black, Color::White, ' '); size_x as usize]; size_y as usize];
     loop {
+        {
+            let end = end_game.read().await;
+            if *end {
+                return Ok(());
+            }
+        }
         if crossterm::event::poll(std::time::Duration::from_millis(25))? {
             match crossterm::event::read()? {
                 Event::Key(keyevent) => match keyevent.code {
                     KeyCode::Esc => {
-                        stdout
+                        let mut stdout_accessor = stdout.lock().await;
+                        stdout_accessor
                             .execute(MoveTo(30, 0))?
                             .execute(SetForegroundColor(Color::Green))?
                             .execute(SetBackgroundColor(Color::Black))?
@@ -143,49 +186,80 @@ async fn gui(
                     let players_readable = players.read().await;
                     queue_print_players(&mut buffer_grid, &*players_readable).await?;
                 }
-                print_char_grid(&mut stdout, &buffer_grid).await?;
+                print_char_grid(stdout.clone(), &buffer_grid).await?;
             }
         }
-        stdout.flush()?;
+        let mut stdout_accessor = stdout.lock().await;
+        stdout_accessor.flush()?;
     }
+    let mut stdout_accessor = stdout.lock().await;
     terminal::disable_raw_mode()?;
-    stdout.execute(terminal::LeaveAlternateScreen)?;
+    stdout_accessor.execute(terminal::LeaveAlternateScreen)?;
+    let mut end = end_game.write().await;
+    *end = true;
     Err("Exited function early with escape key").map_err(anyhow::Error::msg)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut stdout = stdout();
-    stdout
-        .execute(terminal::EnterAlternateScreen)?
-        .execute(cursor::Hide)?;
+    let stdout = Arc::new(Mutex::new(stdout()));
+    let end_game: AtomicBool = Arc::new(RwLock::new(false));
+    {
+        let mut stdout_accessor = stdout.lock().await;
+        stdout_accessor
+            .execute(terminal::EnterAlternateScreen)?
+            .execute(cursor::Hide)?;
+    }
     terminal::enable_raw_mode()?;
     terminal::Clear(terminal::ClearType::All);
     let current_dir: AtomicDirectionOption = Arc::new(RwLock::new(None));
     let stream = TcpStream::connect("127.0.0.1:5000").await?;
-    let (read_stream, write_stream) = tokio::io::split(stream);
+    let (read_stream, write_stream) = stream.into_split();
     let stream_as_buf = BufReader::new(read_stream);
     //println!("Connected to server");
     let players: AtomicPlayers = Arc::new(RwLock::new(Vec::new()));
     let maze = Arc::new(RwLock::new(None));
     let server_handle = {
+        let end_game_arc = end_game.clone();
         let players_arc = players.clone();
         let maze_arc = maze.clone();
-        tokio::spawn(async move { process(stream_as_buf, players_arc, maze_arc).await })
+        tokio::spawn(
+            async move { process(end_game_arc, stream_as_buf, players_arc, maze_arc).await },
+        )
     };
     let gui_handle = {
+        let end_game_arc = end_game.clone();
         let players_arc = players.clone();
         let maze_arc = maze.clone();
         let current_dir_clone = current_dir.clone();
-        tokio::spawn(async move { gui(stdout, players_arc, maze_arc, current_dir_clone).await })
+        let stdout_arc = stdout.clone();
+        tokio::spawn(async move {
+            gui(
+                end_game_arc,
+                stdout_arc,
+                players_arc,
+                maze_arc,
+                current_dir_clone,
+            )
+            .await
+        })
     };
     let send_handle = {
+        let end_game_arc = end_game.clone();
         let current_dir_clone = current_dir.clone();
-        tokio::spawn(async move { send_input(write_stream, current_dir_clone).await })
+        tokio::spawn(async move { send_input(end_game_arc, write_stream, current_dir_clone).await })
     };
+    //tokio::select! {
+    //    _ = server_handle => println!("Server Handler complete"),
+    //    _ = gui_handle => println!("GUI Handler complete"),
+    //    _ = send_handle => println!("Send Handler complete"),
+    //};
     match tokio::try_join!(server_handle, gui_handle, send_handle) {
         Ok(_) => (),
-        Err(e) => eprint!("Error: {:#?}", e),
+        Err(e) => println!("Error: {:#?}", e),
     };
+    let mut stdout_accessor = stdout.lock().await;
+    terminal::disable_raw_mode()?;
+    stdout_accessor.execute(terminal::LeaveAlternateScreen)?;
     Ok(())
 }

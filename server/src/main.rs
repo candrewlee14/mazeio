@@ -54,7 +54,7 @@ async fn process(
     write_streams: AtomicVec<AtomicWriteStream>,
     players: AtomicHashMap<SocketAddr, AtomicPlayer>,
 ) -> Result<()> {
-    let mut interval = interval(Duration::from_millis(50));
+    let mut interval = interval(Duration::from_millis(15));
     loop {
         interval.tick().await;
         let players_serialized = atomic_hashmap_to_string(players.clone()).await?;
@@ -65,7 +65,7 @@ async fn process(
             let mut editable_stream = stream.lock().await;
             event!(Level::TRACE, "Obtained lock for stream write");
             match tokio::time::timeout(
-                Duration::from_millis(25),
+                Duration::from_millis(15),
                 (*editable_stream).write_all(players_serialized.as_bytes()),
             )
             .await
@@ -91,7 +91,7 @@ async fn read_clients(
     players: AtomicHashMap<SocketAddr, AtomicPlayer>,
     maze: Arc<Maze>,
 ) -> Result<()> {
-    let mut interval = interval(Duration::from_millis(50));
+    let mut interval = interval(Duration::from_millis(15));
     loop {
         interval.tick().await;
         event!(Level::TRACE, "Reading Streams");
@@ -100,7 +100,7 @@ async fn read_clients(
             let mut editable_stream = stream.lock().await;
             let mut recv = String::new();
             match tokio::time::timeout(
-                Duration::from_millis(25),
+                Duration::from_millis(15),
                 (*editable_stream).read_line(&mut recv),
             )
             .await
@@ -187,7 +187,7 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     let maze_width = 15;
-    let maze_height = 10;
+    let maze_height = 20;
     let maze = Arc::new(mazeio_shared::Maze::new(maze_width, maze_height));
 
     event!(Level::INFO, "Server started!");
