@@ -205,6 +205,9 @@ async fn gui(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let server_ip = std::env::args()
+        .nth(1)
+        .unwrap_or("127.0.0.1:5000".to_string());
     let stdout = Arc::new(Mutex::new(stdout()));
     let end_game: AtomicBool = Arc::new(RwLock::new(false));
     {
@@ -216,7 +219,7 @@ async fn main() -> Result<()> {
     terminal::enable_raw_mode()?;
     terminal::Clear(terminal::ClearType::All);
     let current_dir: AtomicDirectionOption = Arc::new(RwLock::new(None));
-    let stream = TcpStream::connect("127.0.0.1:5000").await?;
+    let stream = TcpStream::connect(server_ip).await?;
     let (read_stream, write_stream) = stream.into_split();
     let stream_as_buf = BufReader::new(read_stream);
     //println!("Connected to server");
