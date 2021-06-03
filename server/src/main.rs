@@ -218,9 +218,8 @@ async fn main() -> Result<()> {
         maze_height,
     )));
 
-    let listener = TcpListener::bind("127.0.0.1:5000").await?;
+    let listener = TcpListener::bind("0.0.0.0:5000").await?;
     event!(Level::INFO, "Server started!");
-    listener.local_addr();
     let write_streams: AtomicVec<AtomicWriteStream> = Arc::new(RwLock::new(Vec::new()));
     let read_streams: AtomicVec<AtomicReadStream> = Arc::new(RwLock::new(Vec::new()));
     let players: AtomicHashMap<SocketAddr, AtomicPlayer> = Arc::new(RwLock::new(HashMap::new()));
