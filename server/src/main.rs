@@ -24,7 +24,7 @@ type AtomicMaze = Arc<RwLock<Maze>>;
 
 const READ_INTERVAL: u64 = 15;
 const SEND_INTERVAL: u64 = 15;
-const CLIENT_WRITE_FAIL_TIME_LIMIT: u64 = 30;
+const CLIENT_WRITE_FAIL_TIME_LIMIT: u64 = 3000;
 const SEND_TIMEOUT: u64 = 30;
 const READ_TIMEOUT: u64 = 30;
 
@@ -64,8 +64,8 @@ async fn send_info_to_client(
     let mut interval = interval(Duration::from_millis(SEND_INTERVAL));
     let mut fails = 0;
     let ip_addr = {
-        let mut editable_stream = write_stream.lock().await;
-        (*editable_stream).as_ref().peer_addr()?.to_string()
+        let editable_stream = write_stream.lock().await;
+        (*editable_stream).as_ref().peer_addr()?
     };
     loop {
         interval.tick().await;
@@ -82,10 +82,12 @@ async fn send_info_to_client(
                 fails = 0;
             }
             Ok(Err(_)) => {
-                event!(Level::WARN, "Client write failed");
+                event!(Level::DEBUG, "Client write failed");
                 fails += 1;
                 if fails > CLIENT_WRITE_FAIL_TIME_LIMIT / SEND_INTERVAL {
                     event!(Level::INFO, "Client at address {} exited game", ip_addr);
+                    let mut editable_players = players.write().await;
+                    (*editable_players).remove(&ip_addr);
                     return Ok(());
                 }
             }
