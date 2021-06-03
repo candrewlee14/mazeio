@@ -55,7 +55,7 @@ impl Distribution<Direction> for Standard {
 }
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Copy, Clone, PartialEq, Eq)]
 pub enum CellType {
     Open,
     Wall,
@@ -96,7 +96,7 @@ pub fn move_in_dir(
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Maze {
     pub cells: Vec<Vec<CellType>>,
     pub width: usize,

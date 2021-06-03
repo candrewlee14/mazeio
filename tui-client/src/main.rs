@@ -92,6 +92,12 @@ async fn process(
     maze: AtomicMazeOption,
 ) -> Result<()> {
     let mut input = String::new();
+    stream_as_buf.read_line(&mut input).await?;
+    if let Ok(deser_maze) = serde_json::from_str(&input.trim()) {
+        let mut maze_writeable = maze.write().await;
+        *maze_writeable = Some(deser_maze);
+    }
+    input.clear();
     loop {
         {
             let end = end_game.read().await;
@@ -110,9 +116,6 @@ async fn process(
                 if let Ok(deser_players) = serde_json::from_str(&input.trim()) {
                     let mut players_writeable = players.write().await;
                     *players_writeable = deser_players;
-                } else if let Ok(deser_maze) = serde_json::from_str(&input.trim()) {
-                    let mut maze_writeable = maze.write().await;
-                    *maze_writeable = Some(deser_maze);
                 }
                 input.clear();
             }
