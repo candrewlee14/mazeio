@@ -25,6 +25,8 @@ type AtomicMaze = Arc<RwLock<Maze>>;
 const READ_INTERVAL: u64 = 15;
 const SEND_INTERVAL: u64 = 15;
 const CLIENT_WRITE_FAIL_TIME_LIMIT: u64 = 30;
+const SEND_TIMEOUT: u64 = 30;
+const READ_TIMEOUT: u64 = 30;
 
 #[instrument(skip(players))]
 async fn atomic_hashmap_to_string(
@@ -61,13 +63,17 @@ async fn send_info_to_client(
 ) -> Result<()> {
     let mut interval = interval(Duration::from_millis(SEND_INTERVAL));
     let mut fails = 0;
+    let ip_addr = {
+        let mut editable_stream = write_stream.lock().await;
+        (*editable_stream).as_ref().peer_addr()?.to_string()
+    };
     loop {
         interval.tick().await;
         let players_serialized = atomic_hashmap_to_string(players.clone()).await?;
         let mut editable_stream = write_stream.lock().await;
         event!(Level::TRACE, "Obtained lock for stream write");
         match tokio::time::timeout(
-            Duration::from_millis(30),
+            Duration::from_millis(SEND_TIMEOUT),
             (*editable_stream).write_all(players_serialized.as_bytes()),
         )
         .await
@@ -79,9 +85,7 @@ async fn send_info_to_client(
                 event!(Level::WARN, "Client write failed");
                 fails += 1;
                 if fails > CLIENT_WRITE_FAIL_TIME_LIMIT / SEND_INTERVAL {
-                    event!(Level::INFO, "Client exited game",);
-                    let ip_addr = (*editable_stream).as_ref().peer_addr()?.to_string();
-                    event!(Level::WARN, "Client at address {} exited game", ip_addr);
+                    event!(Level::INFO, "Client at address {} exited game", ip_addr);
                     return Ok(());
                 }
             }
@@ -109,7 +113,7 @@ async fn read_from_client(
         let mut editable_stream = read_stream.lock().await;
         let mut recv = String::new();
         match tokio::time::timeout(
-            Duration::from_millis(15),
+            Duration::from_millis(READ_TIMEOUT),
             (*editable_stream).read_line(&mut recv),
         )
         .await
