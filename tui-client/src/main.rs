@@ -21,6 +21,7 @@ type AtomicDirectionOption = Arc<RwLock<Option<Direction>>>;
 type AtomicDirectionVec = Arc<RwLock<Vec<Direction>>>;
 type AtomicMazeOption = Arc<RwLock<Option<Maze>>>;
 type BufferGrid = Vec<Vec<(Color, Color, char)>>;
+type AtomicIdOption = Arc<RwLock<Option<u64>>>;
 
 async fn print_char_grid(stdout: AtomicStdout, grid: &BufferGrid) -> Result<()> {
     let mut stdout_accessor = stdout.lock().await;
@@ -44,9 +45,25 @@ async fn queue_print_maze(grid: &mut BufferGrid, maze: &Maze) -> Result<()> {
     Ok(())
 }
 
-async fn queue_print_players(grid: &mut BufferGrid, players: &[Player]) -> Result<()> {
+async fn queue_print_players(
+    grid: &mut BufferGrid,
+    players: &[Player],
+    id: AtomicIdOption,
+) -> Result<()> {
+    let id_val: Option<u64> = {
+        let id_readable = id.read().await;
+        *id_readable
+    };
+    let mut myself: Option<&Player> = None;
     for player in players.iter() {
-        grid[player.y][player.x] = (Color::Cyan, Color::Cyan, '\u{2588}');
+        if Some(player.id) == id_val {
+            myself = Some(player);
+        } else {
+            grid[player.y][player.x] = (Color::Black, Color::DarkBlue, '\u{2B24}');
+        }
+    }
+    if let Some(me) = myself {
+        grid[me.y][me.x] = (Color::Black, Color::Cyan, '\u{2B24}');
     }
     Ok(())
 }
@@ -91,12 +108,20 @@ async fn process(
     mut stream_as_buf: BufReader<OwnedReadHalf>,
     players: AtomicPlayers,
     maze: AtomicMazeOption,
+    my_id: AtomicIdOption,
 ) -> Result<()> {
     let mut input = String::new();
     stream_as_buf.read_line(&mut input).await?;
     if let Ok(deser_maze) = serde_json::from_str(&input.trim()) {
         let mut maze_writeable = maze.write().await;
         *maze_writeable = Some(deser_maze);
+    }
+    input.clear();
+    stream_as_buf.read_line(&mut input).await?;
+    if let Ok(player) = serde_json::from_str::<Player>(&input.trim()) {
+        let mut id_writeable = my_id.write().await;
+        *id_writeable = Some(player.id);
+        println!("Got player id: {}", player.id);
     }
     input.clear();
     loop {
@@ -135,6 +160,7 @@ async fn gui(
     players: AtomicPlayers,
     maze: AtomicMazeOption,
     cur_dir_rwlock: AtomicDirectionVec,
+    my_id: AtomicIdOption,
 ) -> Result<()> {
     let (size_x, size_y) = crossterm::terminal::size()?;
     let mut buffer_grid: BufferGrid =
@@ -184,7 +210,7 @@ async fn gui(
             queue_print_maze(&mut buffer_grid, &maze_info).await?;
             {
                 let players_readable = players.read().await;
-                queue_print_players(&mut buffer_grid, &*players_readable).await?;
+                queue_print_players(&mut buffer_grid, &*players_readable, my_id.clone()).await?;
             }
             print_char_grid(stdout.clone(), &buffer_grid).await?;
         }
@@ -214,20 +240,30 @@ async fn main() -> Result<()> {
     }
     terminal::enable_raw_mode()?;
     terminal::Clear(terminal::ClearType::All);
+
+    let my_id: AtomicIdOption = Arc::new(RwLock::new(None));
     let current_dir: AtomicDirectionVec = Arc::new(RwLock::new(Vec::new()));
     let stream = TcpStream::connect(server_ip).await?;
     let (read_stream, write_stream) = stream.into_split();
     let stream_as_buf = BufReader::new(read_stream);
-    //println!("Connected to server");
+
     let players: AtomicPlayers = Arc::new(RwLock::new(Vec::new()));
     let maze = Arc::new(RwLock::new(None));
     let server_handle = {
         let end_game_arc = end_game.clone();
         let players_arc = players.clone();
         let maze_arc = maze.clone();
-        tokio::spawn(
-            async move { process(end_game_arc, stream_as_buf, players_arc, maze_arc).await },
-        )
+        let my_id_arc = my_id.clone();
+        tokio::spawn(async move {
+            process(
+                end_game_arc,
+                stream_as_buf,
+                players_arc,
+                maze_arc,
+                my_id_arc,
+            )
+            .await
+        })
     };
     let gui_handle = {
         let end_game_arc = end_game.clone();
@@ -235,6 +271,7 @@ async fn main() -> Result<()> {
         let maze_arc = maze.clone();
         let current_dir_clone = current_dir.clone();
         let stdout_arc = stdout.clone();
+        let my_id_arc = my_id.clone();
         tokio::spawn(async move {
             gui(
                 end_game_arc,
@@ -242,6 +279,7 @@ async fn main() -> Result<()> {
                 players_arc,
                 maze_arc,
                 current_dir_clone,
+                my_id_arc,
             )
             .await
         })

@@ -11,14 +11,20 @@ use std::cmp::{max, min};
 #[allow(dead_code)]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Player {
+    pub id: u64,
     pub name: String,
     pub x: usize,
     pub y: usize,
 }
 #[allow(dead_code)]
 impl Player {
-    pub fn new(name: String) -> Self {
-        Self { name, x: 1, y: 1 }
+    pub fn new(id: u64, name: String) -> Self {
+        Self {
+            id,
+            name,
+            x: 1,
+            y: 1,
+        }
     }
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self).map_err(anyhow::Error::msg)

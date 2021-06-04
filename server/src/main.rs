@@ -1,5 +1,6 @@
 use anyhow::Result;
 use mazeio_shared::{move_in_dir, CellType, Direction, Maze, Player};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::{collections::HashMap, net::SocketAddr};
 use tokio::io::{
@@ -173,18 +174,27 @@ async fn accept_connections(
                 ser_maze.push('\n');
                 stream.write_all(&ser_maze.as_bytes()).await?;
 
+                let mut mutable_map = players.write().await;
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                stream.peer_addr()?.hash(&mut hasher);
+                let player = Player::new(hasher.finish(), "Guest".to_string());
+                let mut player_str: String = player.to_json()?;
+                player_str.push('\n');
+                stream.write_all(&player_str.as_bytes()).await?;
+
+                let new_player_arc = Arc::new(RwLock::new(player));
                 let (read_stream, write_stream) = stream.into_split();
-                let new_player_arc = Arc::new(RwLock::new(Player::new("Guest".to_string())));
                 let write_stream_arc = Arc::new(Mutex::new(write_stream));
                 let read_stream_arc = Arc::new(Mutex::new(BufReader::new(read_stream)));
+
                 {
                     let mut mutable_write_streams = write_streams.write().await;
                     (*mutable_write_streams).push(write_stream_arc.clone());
                     let mut mutable_read_streams = read_streams.write().await;
                     (*mutable_read_streams).push(read_stream_arc.clone());
-                    let mut mutable_map = players.write().await;
-                    (*mutable_map).insert(addr, new_player_arc.clone());
                 }
+
+                (*mutable_map).insert(addr, new_player_arc.clone());
                 let maze_arc = maze.clone();
                 tokio::spawn(async move {
                     read_from_client(read_stream_arc, new_player_arc, maze_arc.clone()).await;
