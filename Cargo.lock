@@ -251,6 +251,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mazeio-dummy-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "mazeio-shared",
+ "rand",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "mazeio-server"
 version = "0.1.0"
 dependencies = [

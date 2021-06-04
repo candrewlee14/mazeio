@@ -1,0 +1,16 @@
+[package]
+name = "mazeio-dummy-client"
+version = "0.1.0"
+authors = ["Andrew Lee <candrewlee14@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+crossterm = "*"
+tokio = {version="1", features=["rt-multi-thread", "macros", "net", "io-util", "sync", "time"]}
+anyhow = "*"
+serde = {version="*", features=["derive"]}
+serde_json = "*"
+mazeio-shared = {path = "../shared"}
+rand = "*"

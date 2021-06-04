@@ -3,7 +3,8 @@
 members = [
     "server",
     "tui-client",
-    "shared"
+    "shared",
+    "dummy-client"
 ]
 
 default-members = ["tui-client"]

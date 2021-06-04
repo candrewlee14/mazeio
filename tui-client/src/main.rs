@@ -18,6 +18,7 @@ type AtomicBool = Arc<RwLock<bool>>;
 type AtomicPlayers = Arc<RwLock<Vec<Player>>>;
 type AtomicStdout = Arc<Mutex<Stdout>>;
 type AtomicDirectionOption = Arc<RwLock<Option<Direction>>>;
+type AtomicDirectionVec = Arc<RwLock<Vec<Direction>>>;
 type AtomicMazeOption = Arc<RwLock<Option<Maze>>>;
 type BufferGrid = Vec<Vec<(Color, Color, char)>>;
 
@@ -52,7 +53,7 @@ async fn queue_print_players(grid: &mut BufferGrid, players: &[Player]) -> Resul
 async fn send_input(
     end_game: AtomicBool,
     mut write_stream: OwnedWriteHalf,
-    cur_dir_rwlock: AtomicDirectionOption,
+    cur_dir_rwlock: AtomicDirectionVec,
 ) -> Result<()> {
     let mut interval = tokio::time::interval(std::time::Duration::from_millis(25));
     loop {
@@ -63,12 +64,12 @@ async fn send_input(
                 return Ok(());
             }
         }
-        let cur_dir = cur_dir_rwlock.read().await;
-        if let Some(dir) = &*cur_dir {
-            let mut dir_ser = serde_json::to_string(dir)?;
+        let mut cur_dir = cur_dir_rwlock.write().await;
+        if cur_dir.len() > 0 {
+            let mut dir_ser = serde_json::to_string(&cur_dir.pop().unwrap())?;
             dir_ser.push('\n');
             match tokio::time::timeout(
-                std::time::Duration::from_millis(1000),
+                std::time::Duration::from_millis(15),
                 write_stream.write_all(dir_ser.as_bytes()),
             )
             .await
@@ -133,7 +134,7 @@ async fn gui(
     stdout: AtomicStdout,
     players: AtomicPlayers,
     maze: AtomicMazeOption,
-    cur_dir_rwlock: AtomicDirectionOption,
+    cur_dir_rwlock: AtomicDirectionVec,
 ) -> Result<()> {
     let (size_x, size_y) = crossterm::terminal::size()?;
     let mut buffer_grid: BufferGrid =
@@ -145,7 +146,7 @@ async fn gui(
                 return Ok(());
             }
         }
-        if crossterm::event::poll(std::time::Duration::from_millis(25))? {
+        if crossterm::event::poll(std::time::Duration::from_millis(15))? {
             match crossterm::event::read()? {
                 Event::Key(keyevent) => match keyevent.code {
                     KeyCode::Esc => {
@@ -159,38 +160,33 @@ async fn gui(
                     }
                     KeyCode::Down => {
                         let mut cur_dir = cur_dir_rwlock.write().await;
-                        *cur_dir = Some(Direction::Down);
+                        cur_dir.push(Direction::Down);
                     }
                     KeyCode::Up => {
                         let mut cur_dir = cur_dir_rwlock.write().await;
-                        *cur_dir = Some(Direction::Up);
+                        cur_dir.push(Direction::Up);
                     }
                     KeyCode::Left => {
                         let mut cur_dir = cur_dir_rwlock.write().await;
-                        *cur_dir = Some(Direction::Left);
+                        cur_dir.push(Direction::Left);
                     }
                     KeyCode::Right => {
                         let mut cur_dir = cur_dir_rwlock.write().await;
-                        *cur_dir = Some(Direction::Right);
+                        cur_dir.push(Direction::Right);
                     }
                     _ => (),
                 },
                 _ => (),
             }
-        } else {
+        }
+        let maze_readable = maze.read().await;
+        if let Some(maze_info) = &*maze_readable {
+            queue_print_maze(&mut buffer_grid, &maze_info).await?;
             {
-                let mut cur_dir = cur_dir_rwlock.write().await;
-                *cur_dir = None;
+                let players_readable = players.read().await;
+                queue_print_players(&mut buffer_grid, &*players_readable).await?;
             }
-            let maze_readable = maze.read().await;
-            if let Some(maze_info) = &*maze_readable {
-                queue_print_maze(&mut buffer_grid, &maze_info).await?;
-                {
-                    let players_readable = players.read().await;
-                    queue_print_players(&mut buffer_grid, &*players_readable).await?;
-                }
-                print_char_grid(stdout.clone(), &buffer_grid).await?;
-            }
+            print_char_grid(stdout.clone(), &buffer_grid).await?;
         }
         let mut stdout_accessor = stdout.lock().await;
         stdout_accessor.flush()?;
@@ -218,7 +214,7 @@ async fn main() -> Result<()> {
     }
     terminal::enable_raw_mode()?;
     terminal::Clear(terminal::ClearType::All);
-    let current_dir: AtomicDirectionOption = Arc::new(RwLock::new(None));
+    let current_dir: AtomicDirectionVec = Arc::new(RwLock::new(Vec::new()));
     let stream = TcpStream::connect(server_ip).await?;
     let (read_stream, write_stream) = stream.into_split();
     let stream_as_buf = BufReader::new(read_stream);
@@ -255,11 +251,6 @@ async fn main() -> Result<()> {
         let current_dir_clone = current_dir.clone();
         tokio::spawn(async move { send_input(end_game_arc, write_stream, current_dir_clone).await })
     };
-    //tokio::select! {
-    //    _ = server_handle => println!("Server Handler complete"),
-    //    _ = gui_handle => println!("GUI Handler complete"),
-    //    _ = send_handle => println!("Send Handler complete"),
-    //};
     match tokio::try_join!(server_handle, gui_handle, send_handle) {
         Ok(_) => (),
         Err(e) => println!("Error: {:#?}", e),
