@@ -117,8 +117,7 @@ impl Game for GameService {
                         let mut player_lock = player.write().await;
                         let dir = Direction::from_i32(indir.direction).unwrap();
                         debug!("Broadcasting player movement (player_id: {}, direction: {:?}) for client at {}", (*player_lock).id, dir, addr);
-                        (*player_lock)
-                            .move_if_valid(&maze, dir);
+                        (*player_lock).move_if_valid(&maze, dir);
                         broadcast_tx.send((*player_lock).clone()).unwrap();
                     } else {
                         break;
@@ -170,7 +169,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     debug!("Debug log level activated");
     trace!("Trace log level activated");
     Server::builder()
-        .add_service(GameServer::new(game))
+        .accept_http1(true)
+        .add_service(tonic_web::enable(GameServer::new(game)))
         .serve(addr)
         .await?;
     Ok(())
