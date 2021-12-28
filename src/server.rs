@@ -3,17 +3,16 @@ use async_stream::yielder::Receiver;
 use shared::*;  
 
 use mazeio_proto::game_server::{Game, GameServer};
+use tokio::sync::mpsc::error::SendError;
 use tokio::time::{self, Duration};
-
-use futures_core::Stream;
 
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc};
-use tokio::sync::{mpsc, RwLock, broadcast};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::{mpsc, RwLock, broadcast, Mutex};
+use tokio_stream::wrappers::{ReceiverStream, BroadcastStream};
 use tonic::{transport::Server, Request, Response, Status, Streaming};
-use futures_util::StreamExt;
+use futures_util::{TryStreamExt, StreamExt, stream::MapErr};
 
 use std::collections::HashMap;
 
@@ -25,13 +24,15 @@ type AtomicMaze = Arc<RwLock<ProtoMaze>>;
 pub struct GameService {
     maze: AtomicMaze,
     players: AtomicPlayerDict,
-
+    tx: broadcast::Sender<Player>,
 }
 impl GameService {
     fn new(maze_width: usize, maze_height: usize) -> Self {
+        let (tx, _rx) = broadcast::channel(50);
         Self {
             maze: Arc::new(RwLock::new(ProtoMaze::new(maze_width, maze_height))),
             players: Arc::new(RwLock::new(HashMap::new())),
+            tx: tx,
         }
     }
 }
@@ -46,20 +47,31 @@ impl Game for GameService {
         // add player
         let player_id = {
             let new_player = Player::new(join_game_request.name);
+            // send new player to the broadcast
+            self.tx.clone().send(new_player.clone());
             let id = new_player.id.clone();
             let mut player_dict = self.players.write().await;
             (*player_dict).insert(addr, Arc::new(RwLock::new(new_player)));
             id
         };
+        let players = {
+            let player_dict = self.players.read().await;
+            let mut ps : Vec<Player> = Vec::with_capacity((*player_dict).len());
+            for player_lock in player_dict.values() {
+                let player = player_lock.read().await;
+                ps.push((*player).clone());
+            }
+            ps
+        };
         let maze_data = self.maze.read().await;
         Ok(Response::new(JoinGameResponse {
             player_id: player_id,
-            maze: Some((*maze_data).clone())
+            maze: Some((*maze_data).clone()),
+            players: players
         }))
     }
 
-    type StreamGameStream = ReceiverStream<Result<Player, Status>>;
-
+    type StreamGameStream = Pin<Box<dyn futures_core::Stream<Item = Result<Player, Status>> + Send + 'static>>;
     async fn stream_game(
         &self,
         request: Request<Streaming<InputDirection>>,
@@ -70,6 +82,7 @@ impl Game for GameService {
         // Update position
         let players_dict = self.players.clone();
         let maze = self.maze.clone();
+        let broadcast_tx = self.tx.clone();
         tokio::spawn( async move {
             while let Some(dir) = dir_stream.next().await {
                 let player_dict_lock = players_dict.read().await;
@@ -78,25 +91,15 @@ impl Game for GameService {
 
                 let mut player_lock = player.write().await; 
                 (*player_lock).move_if_valid(&*maze_lock, Direction::from_i32(dir.unwrap().direction).unwrap());
+                broadcast_tx.send((*player_lock).clone()).unwrap();
             }
         });
 
-        let (tx, rx) = mpsc::channel(4);
-
-        let players_dict = self.players.clone();
-        tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_millis(200));
-            while true {
-                // TODO: Send over positions
-                let players = players_dict.read().await;
-                for (_id, player_lock) in (*players).iter() {
-                    let cur_player = player_lock.read().await;
-                    tx.send(Ok((*cur_player).clone())).await.unwrap();
-                }
-                interval.tick().await;
-            }
-        });
-        Ok(Response::new(ReceiverStream::new(rx)))
+        let broadcast_sub = self.tx.subscribe();
+        Ok(Response::new(
+            Box::pin(
+                BroadcastStream::new(broadcast_sub)
+                .map_err(|_e| tonic::Status::internal("broadcast error")))))
     }
 }
 

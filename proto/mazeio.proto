@@ -43,6 +43,7 @@ message JoinGameRequest {
 message JoinGameResponse {
     string player_id = 1;
     Maze maze = 2;
+    repeated Player players = 3;
 }
 
 enum Direction {
