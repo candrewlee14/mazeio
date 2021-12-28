@@ -38,13 +38,13 @@ impl GameService {
         Self {
             maze: ProtoMaze::new(maze_width, maze_height),
             players: Arc::new(RwLock::new(HashMap::new())),
-            tx: tx,
+            tx,
         }
     }
 }
 #[tonic::async_trait]
 impl Game for GameService {
-    #[instrument(skip_all)]
+    #[instrument(skip(self))]
     async fn connect_player(
         &self,
         request: Request<JoinGameRequest>,
@@ -92,7 +92,7 @@ impl Game for GameService {
 
     type StreamGameStream =
         Pin<Box<dyn futures_core::Stream<Item = Result<Player, Status>> + Send + 'static>>;
-    #[instrument(skip_all)]
+    #[instrument(skip(self))]
     async fn stream_game(
         &self,
         request: Request<Streaming<InputDirection>>,
