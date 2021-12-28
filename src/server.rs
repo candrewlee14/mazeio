@@ -93,7 +93,7 @@ impl Game for GameService {
                 while let Ok(maybe_dir) = dir_stream.try_next().await {
                     let player_dict_lock = players_dict.read().await;
                     let player = (*player_dict_lock)[&addr].clone();
-                    println!("{:?}", maybe_dir);
+                    // println!("{:?}", maybe_dir);
                     if let Some(indir) = maybe_dir {
                         let mut player_lock = player.write().await;
                         (*player_lock)

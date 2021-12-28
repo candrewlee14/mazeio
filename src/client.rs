@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 else {
                     (*player_dict_lock).insert(player.id.clone(), player);
-                    println!("{:#?}", (*player_dict_lock));
+                    println!("{:#?}\n", (*player_dict_lock));
                 }
             } else {
                 println! {"{:?}", res};
