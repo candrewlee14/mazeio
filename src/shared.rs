@@ -3,7 +3,8 @@ pub mod mazeio_proto {
 }
 
 pub use mazeio_proto::{
-    CellType, Direction, InputDirection, JoinGameRequest, JoinGameResponse, Maze as ProtoMaze, Player, Position,
+    CellType, Direction, InputDirection, JoinGameRequest, JoinGameResponse, Maze as ProtoMaze,
+    Player, Position,
 };
 
 use rand::{
@@ -66,7 +67,15 @@ impl Position {
     pub fn new(x: u32, y: u32) -> Self {
         Self { x, y }
     }
-    pub fn move_in_dir(&mut self, min_x: usize, min_y: usize, max_x: usize, max_y: usize, dir: Direction, dist: usize){
+    pub fn move_in_dir(
+        &mut self,
+        min_x: usize,
+        min_y: usize,
+        max_x: usize,
+        max_y: usize,
+        dir: Direction,
+        dist: usize,
+    ) {
         let mut x = self.x as usize;
         let mut y = self.y as usize;
         move_in_dir(&mut x, &mut y, min_x, min_y, max_x, max_y, &dir, dist);
@@ -78,17 +87,15 @@ impl Position {
 impl Player {
     pub fn new(name: String) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(), // TODO: UUID
+            id: Uuid::new_v4().to_string(),
             name,
             pos: Some(Position::new(1, 1)),
+            alive: true,
         }
     }
     pub fn move_if_valid(&mut self, maze: &ProtoMaze, dir: Direction) -> bool {
         let mut pos = self.pos.clone().unwrap();
-        pos.move_in_dir(0, 0, 
-            maze.width as usize, 
-            maze.height as usize, 
-            dir, 1);
+        pos.move_in_dir(0, 0, maze.width as usize, maze.height as usize, dir, 1);
         if maze.get(pos.x as usize, pos.y as usize) == CellType::Open {
             self.pos = Some(pos);
             return true;
@@ -112,7 +119,7 @@ impl ProtoMaze {
         height += (height + 1) % 2;
         let mut pos_x = 1;
         let mut pos_y = 1;
-        let mut maze = ProtoMaze{
+        let mut maze = ProtoMaze {
             width: width as u32,
             height: height as u32,
             cells: vec![CellType::Wall as i32; (width * height) as usize],
@@ -146,7 +153,8 @@ impl ProtoMaze {
 }
 impl std::string::ToString for ProtoMaze {
     fn to_string(&self) -> String {
-        let maze_str = self.cells
+        let maze_str = self
+            .cells
             .chunks(self.width as usize)
             .map(|row| {
                 row.iter()
