@@ -28,33 +28,12 @@ checksum = "8b26702f315f53b6071259e15dd9d64528213b44d61de1ec926eca7715d62203"
 
 [[package]]
 name = "async-stream"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22068c0c19514942eefcfd4daf8976ef1aad84e61539f95cd200c35202f80af5"
-dependencies = [
- "async-stream-impl 0.2.1",
- "futures-core",
-]
-
-[[package]]
-name = "async-stream"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "171374e7e3b2504e0e5236e3b59260560f9fe94bfe9ac39ba5e4e929c5590625"
 dependencies = [
- "async-stream-impl 0.3.2",
+ "async-stream-impl",
  "futures-core",
-]
-
-[[package]]
-name = "async-stream-impl"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25f9db3b38af870bf7e5cc649167533b493928e50744e2c30ae350230b414670"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -433,12 +412,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "mazeio"
+name = "mazeio-client"
 version = "0.1.0"
 dependencies = [
- "async-stream 0.2.1",
  "crossterm",
+ "mazeio-shared",
+ "tui",
+ "unicode-width",
+]
+
+[[package]]
+name = "mazeio-server"
+version = "0.1.0"
+dependencies = [
  "dotenv",
+ "mazeio-shared",
+ "tonic-web",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "mazeio-shared"
+version = "0.1.0"
+dependencies = [
  "futures-core",
  "futures-util",
  "prost",
@@ -447,12 +445,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
- "tonic-web",
- "tracing",
- "tracing-futures",
- "tracing-subscriber",
- "tui",
- "unicode-width",
  "uuid",
 ]
 
@@ -961,7 +953,7 @@ version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff08f4649d10a70ffa3522ca559031285d8e421d727ac85c60825761818f5d0a"
 dependencies = [
- "async-stream 0.3.2",
+ "async-stream",
  "async-trait",
  "base64",
  "bytes",
