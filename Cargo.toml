@@ -1,5 +1,5 @@
 [package]
-name = "mazeio-go"
+name = "mazeio"
 version = "0.1.0"
 authors = ["Andrew Lee <candrewlee14@gmail.com>"]
 edition = "2018"
@@ -21,16 +21,28 @@ tonic = "0.6"
 prost = "0.9"
 futures-core = "0.3"
 futures-util = "0.3"
-tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync", "time"] }
-tokio-stream = {version = "0.1", features = ["sync"]}
+tokio = { version = "1.0", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 
 async-stream = "0.2"
 #serde = { version = "1.0", features = ["derive"] }
 #serde_json = "1.0"
 rand = "0.8"
-uuid = {version = "0.8", features = [ "v4" ]}
+uuid = { version = "0.8", features = ["v4"] }
 
-crossterm = {version="0.20", features = ["event-stream"]}
+# Server Only
+tracing = "0.1"
+tracing-subscriber = "0.2"
+tracing-futures = "0.2"
+dotenv = "0.15"
+
+# Client Only
+crossterm = { version = "0.20", features = ["event-stream"] }
 tui = { version = "0.16", default-features = false, features = ['crossterm'] }
 unicode-width = "0.1.5"
 

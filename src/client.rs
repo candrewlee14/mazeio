@@ -85,8 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut player_dict_lock = game_state.player_dict.write().await;
                 if !player.alive {
                     (*player_dict_lock).remove(&player.id);
-                }
-                else {
+                } else {
                     (*player_dict_lock).insert(player.id.clone(), player);
                     println!("{:#?}\n", (*player_dict_lock));
                 }

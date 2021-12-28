@@ -147,7 +147,6 @@ impl ProtoMaze {
                 total_open_cells -= 1;
             }
         }
-        println!("{}", maze.to_string());
         maze
     }
 }
