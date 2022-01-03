@@ -1,9 +1,9 @@
-pub use tonic;
-pub use tokio;
-pub use tokio_stream;
 pub use futures_core;
 pub use futures_util;
 pub use rand;
+pub use tokio;
+pub use tokio_stream;
+pub use tonic;
 pub use uuid;
 
 pub mod mazeio_proto {
