@@ -77,7 +77,7 @@ async fn run_app<B: Backend>(
     tx: &Sender<InputDirection>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     //let mut events = EventStream::new();
-    let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
     let mut is_running = true;
     let game_state_synced = Rc::new(RefCell::new(game_state.to_synced().await));
 

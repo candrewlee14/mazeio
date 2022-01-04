@@ -1,10 +1,10 @@
 extern crate mazeio_shared;
 use mazeio_shared::*;
 use std::collections::HashMap;
-use std::sync::{Arc};
+use std::sync::Arc;
 use tokio::sync::{
     mpsc::{Receiver, Sender},
-    RwLock, Mutex
+    Mutex, RwLock,
 };
 
 pub type AtomicPlayerDict = Arc<RwLock<HashMap<String, Player>>>;
@@ -26,7 +26,7 @@ pub struct GameStateSynced {
 impl GameStateSynced {
     pub async fn update_players(&mut self, game_state: &mut GameState) {
         let player_lock = game_state.player_dict.read().await;
-        self.player_dict =  (*player_lock).clone();
+        self.player_dict = (*player_lock).clone();
         let mut changed_lock = game_state.changed_since_synced.lock().await;
         *changed_lock = false;
     }
