@@ -77,18 +77,18 @@ async fn run_app<B: Backend>(
     tx: &Sender<InputDirection>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     //let mut events = EventStream::new();
-    let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
     let mut is_running = true;
     let game_state_synced = Rc::new(RefCell::new(game_state.to_synced().await));
 
     while is_running {
         terminal.draw(|f| ui(Some(game_state_synced.clone()), f))?;
-        match crossterm::event::poll(std::time::Duration::from_millis(50))? {
+        match crossterm::event::poll(std::time::Duration::from_millis(5))? {
             true => handle_event(&mut is_running, crossterm::event::read()?, tx).await?,
             false => {}
         };
         // clear keyboard buffer
-        while crossterm::event::poll(std::time::Duration::from_millis(25))? {
+        while crossterm::event::poll(std::time::Duration::from_millis(5))? {
             crossterm::event::read()?;
         }
         let has_changed = game_state.changed_since_synced.lock().await;

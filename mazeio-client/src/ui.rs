@@ -38,9 +38,13 @@ impl Widget for GameView {
 
             for i in area.y..area.y + area.height {
                 for j in area.x..area.x + area.width {
-                    let x =  j as i32 + scroll.0 as i32 - area.x as i32 - centering.0 as i32;
+                    let x = j as i32 + scroll.0 as i32 - area.x as i32 - centering.0 as i32;
                     let y = i as i32 + scroll.1 as i32 - area.y as i32 - centering.1 as i32;
-                    if x >= 0 && x < state.maze.width as i32 && y >= 0 && y < state.maze.height as i32 {
+                    if x >= 0
+                        && x < state.maze.width as i32
+                        && y >= 0
+                        && y < state.maze.height as i32
+                    {
                         let cell = buf.get_mut(j.try_into().unwrap(), i.try_into().unwrap());
                         cell.set_char(
                             CellType::from_i32(
@@ -59,7 +63,11 @@ impl Widget for GameView {
                 let pos = (*player).pos.clone().unwrap();
                 let x = pos.x as i32 - scroll.0 as i32 + area.x as i32 + centering.0 as i32;
                 let y = pos.y as i32 - scroll.1 as i32 + area.y as i32 + centering.1 as i32;
-                if x >= 0 && x < area.width as i32 && y >= 0 && y < area.width as i32 {
+                if x >= area.x as i32
+                    && x < (area.x + area.width) as i32
+                    && y >= area.y as i32
+                    && y < (area.y + area.height) as i32
+                {
                     let cell = buf.get_mut(x.try_into().unwrap(), y.try_into().unwrap());
                     cell.set_char('●')
                         .set_style(Style::default().fg(Color::Red));
@@ -67,7 +75,11 @@ impl Widget for GameView {
             }
             let x = player_pos.x as i32 - scroll.0 as i32 + area.x as i32 + centering.0 as i32;
             let y = player_pos.y as i32 - scroll.1 as i32 + area.y as i32 + centering.1 as i32;
-            if x >= 0 && x < area.width as i32 && y >= 0 && y < area.width as i32 {
+            if x >= area.x as i32
+                && x < (area.x + area.width) as i32
+                && y >= area.y as i32
+                && y < (area.y + area.height) as i32
+            {
                 let cell = buf.get_mut(x.try_into().unwrap(), y.try_into().unwrap());
                 // draw client player
                 cell.set_char('⬤')

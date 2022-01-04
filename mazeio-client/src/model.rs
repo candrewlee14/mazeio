@@ -94,6 +94,7 @@ impl GameState {
                         (*player_dict_lock).insert(player.id.clone(), player);
                         //println!("{:#?}\n", (*player_dict_lock));
                     }
+                    //println!("Got more player info from server!\n");
                     let mut changed_lock = changed_since_synced.lock().await;
                     *changed_lock = true;
                 } else {
