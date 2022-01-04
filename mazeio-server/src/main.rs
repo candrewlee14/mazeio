@@ -152,7 +152,7 @@ impl Game for GameService {
 #[instrument]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
-    let ef = EnvFilter::try_from_default_env()?;
+    let ef = EnvFilter::from_default_env();
     tracing_subscriber::fmt()
         .with_target(true)
         .with_level(true)

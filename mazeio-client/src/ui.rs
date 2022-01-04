@@ -69,7 +69,7 @@ impl Widget for GameView {
                     && y < (area.y + area.height) as i32
                 {
                     let cell = buf.get_mut(x.try_into().unwrap(), y.try_into().unwrap());
-                    cell.set_char('●')
+                    cell.set_char('◍')
                         .set_style(Style::default().fg(Color::Red));
                 }
             }
@@ -82,8 +82,8 @@ impl Widget for GameView {
             {
                 let cell = buf.get_mut(x.try_into().unwrap(), y.try_into().unwrap());
                 // draw client player
-                cell.set_char('⬤')
-                    .set_style(Style::default().fg(Color::Blue));
+                cell.set_char('●')
+                    .set_style(Style::default().fg(Color::Cyan));
             }
         }
     }
