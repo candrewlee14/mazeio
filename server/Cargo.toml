@@ -11,4 +11,4 @@ tonic-web = "0.2"
 tracing-subscriber = "0.2"
 tracing-futures = "0.2"
 dotenv = "0.15"
-mazeio-shared = {path = "../mazeio-shared"}
+mazeio-shared = {path = "../shared"}

@@ -10,4 +10,4 @@ crossterm = { version = "0.20", features = ["event-stream"] }
 #crossterm = "0.20"
 tui = { version = "0.16", default-features = false, features = ['crossterm'] }
 unicode-width = "0.1.5"
-mazeio-shared = {path = "../mazeio-shared"}
+mazeio-shared = {path = "../shared"}

@@ -12,9 +12,9 @@ use mazeio_proto::game_client::GameClient;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc::Sender, RwLock};
+use tokio::time::Instant;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Request;
-
 // tui uses
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEvent},
@@ -27,37 +27,23 @@ async fn handle_event(
     is_running: &mut bool,
     event: crossterm::event::Event,
     tx: &Sender<InputDirection>,
+    game_state_synced: &mut GameStateSynced,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut maybe_dir: Option<Direction> = None;
     match event {
         Event::Key(key) => {
             match key.code {
                 KeyCode::Char('a') => {
-                    tx.send(InputDirection {
-                        direction: Direction::Left.into(),
-                    })
-                    .await
-                    .unwrap();
+                    maybe_dir = Some(Direction::Left);
                 }
                 KeyCode::Char('d') => {
-                    tx.send(InputDirection {
-                        direction: Direction::Right.into(),
-                    })
-                    .await
-                    .unwrap();
+                    maybe_dir = Some(Direction::Right);
                 }
                 KeyCode::Char('w') => {
-                    tx.send(InputDirection {
-                        direction: Direction::Up.into(),
-                    })
-                    .await
-                    .unwrap();
+                    maybe_dir = Some(Direction::Up);
                 }
                 KeyCode::Char('s') => {
-                    tx.send(InputDirection {
-                        direction: Direction::Down.into(),
-                    })
-                    .await
-                    .unwrap();
+                    maybe_dir = Some(Direction::Down);
                 }
                 KeyCode::Esc => {
                     *is_running = false;
@@ -67,6 +53,19 @@ async fn handle_event(
         }
         Event::Resize(..) => {}
         _ => {}
+    }
+    if let Some(dir) = maybe_dir {
+        if let Some(player) = game_state_synced
+            .player_dict
+            .get_mut(&game_state_synced.player_id)
+        {
+            (*player).move_if_valid(&game_state_synced.maze, dir);
+        }
+        tx.send(InputDirection {
+            direction: dir.into(),
+        })
+        .await
+        .unwrap();
     }
     Ok(())
 }
@@ -80,17 +79,29 @@ async fn run_app<B: Backend>(
     let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
     let mut is_running = true;
     let game_state_synced = Rc::new(RefCell::new(game_state.to_synced().await));
-
     while is_running {
-        terminal.draw(|f| ui(Some(game_state_synced.clone()), f))?;
         match crossterm::event::poll(std::time::Duration::from_millis(5))? {
-            true => handle_event(&mut is_running, crossterm::event::read()?, tx).await?,
+            true => {
+                // println!("Got input!");
+                if let Ok(mut state_synced_mut) = game_state_synced.try_borrow_mut() {
+                    handle_event(
+                        &mut is_running,
+                        crossterm::event::read()?,
+                        tx,
+                        &mut state_synced_mut,
+                    )
+                    .await?;
+                }
+            }
             false => {}
         };
+        terminal.draw(|f| ui(Some(game_state_synced.clone()), f))?;
+
         // clear keyboard buffer
         while crossterm::event::poll(std::time::Duration::from_millis(5))? {
             crossterm::event::read()?;
         }
+
         let has_changed = game_state.changed_since_synced.lock().await;
         if *has_changed == true {
             drop(has_changed);
@@ -109,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let game_state = GameState::initial_state("test-name".to_string(), &mut client).await?;
 
     // buffer to hold the direction values to be sent
-    let (tx, rx) = tokio::sync::mpsc::channel(3);
+    let (tx, rx) = tokio::sync::mpsc::channel(5);
     game_state.handle_player_stream(rx, &mut client).await?;
 
     // setup terminal

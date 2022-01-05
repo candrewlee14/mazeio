@@ -1,4 +1,4 @@
 [workspace]
 
-members = ["mazeio-client", "mazeio-server", "mazeio-shared"]
-default-members = ["mazeio-client"]
+members = ["client", "server", "shared"]
+default-members = ["client"]
