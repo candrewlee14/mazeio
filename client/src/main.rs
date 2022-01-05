@@ -9,7 +9,7 @@ use model::*;
 
 use futures_util::{StreamExt, TryStreamExt};
 use mazeio_proto::game_client::GameClient;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{mpsc::Sender, RwLock};
 use tokio::time::Instant;
@@ -27,6 +27,7 @@ async fn handle_event(
     is_running: &mut bool,
     event: crossterm::event::Event,
     tx: &Sender<InputDirection>,
+    pos_history: Rc<RefCell<HashSet<(u32, u32)>>>,
     game_state_synced: &mut GameStateSynced,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut maybe_dir: Option<Direction> = None;
@@ -55,17 +56,29 @@ async fn handle_event(
         _ => {}
     }
     if let Some(dir) = maybe_dir {
+        // locally move the player (this will be overwritten at later syncing)
         if let Some(player) = game_state_synced
             .player_dict
             .get_mut(&game_state_synced.player_id)
         {
             (*player).move_if_valid(&game_state_synced.maze, dir);
+            if let Some(pos) = (*player).pos.clone() {
+                if let Ok(mut pos_history_mut) = pos_history.try_borrow_mut() {
+                    (*pos_history_mut).insert((pos.x, pos.y));
+                }
+            }
+
+            // spawn a short thread to send the input to server
+            let tx_clone = tx.clone();
+            tokio::spawn(async move {
+                tx_clone
+                    .send(InputDirection {
+                        direction: dir.into(),
+                    })
+                    .await
+                    .unwrap();
+            });
         }
-        tx.send(InputDirection {
-            direction: dir.into(),
-        })
-        .await
-        .unwrap();
     }
     Ok(())
 }
@@ -75,11 +88,15 @@ async fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     tx: &Sender<InputDirection>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    //let mut events = EventStream::new();
     let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
     let mut is_running = true;
     let game_state_synced = Rc::new(RefCell::new(game_state.to_synced().await));
+    let mut pos_history = Rc::new(RefCell::new(HashSet::with_capacity(100)));
+    let mut frame_num: u128 = 0;
+    let mut total_time: u128 = 0;
     while is_running {
+        frame_num += 1;
+        //let now = Instant::now();
         match crossterm::event::poll(std::time::Duration::from_millis(5))? {
             true => {
                 // println!("Got input!");
@@ -88,6 +105,7 @@ async fn run_app<B: Backend>(
                         &mut is_running,
                         crossterm::event::read()?,
                         tx,
+                        pos_history.clone(),
                         &mut state_synced_mut,
                     )
                     .await?;
@@ -95,7 +113,7 @@ async fn run_app<B: Backend>(
             }
             false => {}
         };
-        terminal.draw(|f| ui(Some(game_state_synced.clone()), f))?;
+        terminal.draw(|f| ui(Some(game_state_synced.clone()), pos_history.clone(), f))?;
 
         // clear keyboard buffer
         while crossterm::event::poll(std::time::Duration::from_millis(5))? {
@@ -109,6 +127,8 @@ async fn run_app<B: Backend>(
                 (*state_synced_mut).update_players(&mut game_state).await;
             }
         }
+        //total_time += now.elapsed().as_millis();
+        //println!("Avg time: {:?}", total_time / frame_num);
         interval.tick().await;
     }
     Ok(())
