@@ -2,10 +2,7 @@ extern crate mazeio_shared;
 use mazeio_shared::*;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{
-    mpsc::{Receiver},
-    Mutex, RwLock,
-};
+use tokio::sync::{mpsc::Receiver, Mutex, RwLock};
 
 pub type AtomicPlayerDict = Arc<RwLock<HashMap<String, Player>>>;
 use mazeio_proto::game_client::GameClient;

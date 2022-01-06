@@ -1,4 +1,4 @@
 [workspace]
 
-members = ["client", "server", "shared"]
+members = ["client", "server", "shared", "dummy-client"]
 default-members = ["client"]

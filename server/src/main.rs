@@ -6,13 +6,13 @@ use mazeio_shared::*;
 use mazeio_proto::game_server::{Game, GameServer};
 
 // async
-use futures_util::{TryStreamExt};
+use futures_util::TryStreamExt;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 //use tokio::time::{self, Duration};
-use tokio_stream::wrappers::{BroadcastStream};
+use tokio_stream::wrappers::BroadcastStream;
 use tonic::{transport::Server, Request, Response, Status, Streaming};
 
 // logging
@@ -22,6 +22,7 @@ use tracing_subscriber::{self, util::SubscriberInitExt, EnvFilter};
 // data/collection types
 use std::collections::HashMap;
 type AtomicPlayerDict = Arc<RwLock<HashMap<SocketAddr, Arc<RwLock<Player>>>>>;
+use tokio_stream::StreamExt;
 
 #[derive(Debug)]
 pub struct GameService {
@@ -108,7 +109,7 @@ impl Game for GameService {
             // read from client stream and send their new player location
             // into broadcast channel
             tokio::spawn(async move {
-                while let Ok(maybe_dir) = dir_stream.try_next().await {
+                while let Ok(maybe_dir) = TryStreamExt::try_next(&mut dir_stream).await {
                     let player_dict_lock = players_dict.read().await;
                     let player = (*player_dict_lock)[&addr].clone();
                     // println!("{:?}", maybe_dir);
@@ -142,7 +143,9 @@ impl Game for GameService {
         let broadcast_sub = self.tx.subscribe();
         Ok(Response::new(Box::pin(
             BroadcastStream::new(broadcast_sub)
-                .map_err(|_e| tonic::Status::internal("Broadcast error")),
+                .map_err(|e| tonic::Status::internal(format!("Broadcast Error: {}", e)))
+                //.map(|x| x.ok())
+                //.filter_map(|x| Some(Ok(x.unwrap()))),
         )))
     }
 }
