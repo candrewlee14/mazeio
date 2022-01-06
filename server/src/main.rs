@@ -6,23 +6,22 @@ use mazeio_shared::*;
 use mazeio_proto::game_server::{Game, GameServer};
 
 // async
-use futures_util::{stream::MapErr, StreamExt, TryStreamExt};
+use futures_util::{TryStreamExt};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
-use tokio::time::{self, Duration};
-use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
+use tokio::sync::{broadcast, RwLock};
+//use tokio::time::{self, Duration};
+use tokio_stream::wrappers::{BroadcastStream};
 use tonic::{transport::Server, Request, Response, Status, Streaming};
 
 // logging
-use tracing::{debug, error, info, instrument, span, trace, warn, Level};
+use tracing::{debug, info, instrument, trace, warn};
 use tracing_subscriber::{self, util::SubscriberInitExt, EnvFilter};
 
 // data/collection types
 use std::collections::HashMap;
 type AtomicPlayerDict = Arc<RwLock<HashMap<SocketAddr, Arc<RwLock<Player>>>>>;
-type AtomicMaze = Arc<RwLock<ProtoMaze>>;
 
 #[derive(Debug)]
 pub struct GameService {

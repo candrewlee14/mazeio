@@ -1,4 +1,4 @@
-use mazeio_shared::{CellType, Position, ProtoMaze};
+use mazeio_shared::{CellType, Position};
 use tui::{buffer::Buffer, layout::Rect};
 
 pub use tui::{

@@ -7,21 +7,16 @@ use ui::*;
 mod model;
 use model::*;
 
-use futures_util::{StreamExt, TryStreamExt};
 use mazeio_proto::game_client::GameClient;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::{mpsc::Sender, RwLock};
-use tokio::time::Instant;
-use tokio_stream::wrappers::ReceiverStream;
-use tonic::Request;
+use std::collections::HashSet;
+use tokio::sync::mpsc::Sender;
 // tui uses
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEvent},
+    event::{Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::{error::Error, io};
+use std::io;
 
 async fn handle_event(
     is_running: &mut bool,
@@ -91,34 +86,31 @@ async fn run_app<B: Backend>(
     let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
     let mut is_running = true;
     let game_state_synced = Rc::new(RefCell::new(game_state.to_synced().await));
-    let mut pos_history = Rc::new(RefCell::new(HashSet::with_capacity(100)));
-    let mut frame_num: u128 = 0;
-    let mut total_time: u128 = 0;
+    let pos_history = Rc::new(RefCell::new(HashSet::with_capacity(100)));
+    // let mut frame_num: u128 = 0;
+    // let mut total_time: u128 = 0;
     while is_running {
-        frame_num += 1;
+        // frame_num += 1;
         //let now = Instant::now();
-        match crossterm::event::poll(std::time::Duration::from_millis(5))? {
-            true => {
-                // println!("Got input!");
-                if let Ok(mut state_synced_mut) = game_state_synced.try_borrow_mut() {
-                    handle_event(
-                        &mut is_running,
-                        crossterm::event::read()?,
-                        tx,
-                        pos_history.clone(),
-                        &mut state_synced_mut,
-                    )
-                    .await?;
-                }
+        if let Ok(true) = crossterm::event::poll(std::time::Duration::from_millis(5)) {
+            // println!("Got input!");
+            if let Ok(mut state_synced_mut) = game_state_synced.try_borrow_mut() {
+                handle_event(
+                    &mut is_running,
+                    crossterm::event::read()?,
+                    tx,
+                    pos_history.clone(),
+                    &mut state_synced_mut,
+                )
+                .await?;
             }
-            false => {}
         };
-        terminal.draw(|f| ui(Some(game_state_synced.clone()), pos_history.clone(), f))?;
-
-        // clear keyboard buffer
-        while crossterm::event::poll(std::time::Duration::from_millis(5))? {
+        //clear keyboard buffer
+        while crossterm::event::poll(std::time::Duration::from_millis(1))? {
             crossterm::event::read()?;
         }
+        //draw
+        terminal.draw(|f| ui(Some(game_state_synced.clone()), pos_history.clone(), f))?;
 
         let has_changed = game_state.changed_since_synced.lock().await;
         if *has_changed == true {
@@ -127,6 +119,7 @@ async fn run_app<B: Backend>(
                 (*state_synced_mut).update_players(&mut game_state).await;
             }
         }
+
         //total_time += now.elapsed().as_millis();
         //println!("Avg time: {:?}", total_time / frame_num);
         interval.tick().await;

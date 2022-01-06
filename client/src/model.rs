@@ -3,7 +3,7 @@ use mazeio_shared::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{
-    mpsc::{Receiver, Sender},
+    mpsc::{Receiver},
     Mutex, RwLock,
 };
 
@@ -77,7 +77,7 @@ impl GameState {
         rx: Receiver<InputDirection>,
         client: &mut GameClient<tonic::transport::Channel>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut playerStream = client
+        let mut player_stream = client
             .stream_game(ReceiverStream::new(rx))
             .await?
             .into_inner();
@@ -85,7 +85,7 @@ impl GameState {
         let player_dict = self.player_dict.clone();
         let changed_since_synced = self.changed_since_synced.clone();
         tokio::spawn(async move {
-            while let Some(res) = playerStream.next().await {
+            while let Some(res) = player_stream.next().await {
                 if let Ok(player) = res {
                     let mut player_dict_lock = player_dict.write().await;
                     if !player.alive {
